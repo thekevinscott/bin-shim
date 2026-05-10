@@ -103,14 +103,53 @@ with the child's exit code. Caller is responsible for `process.exit`.
 
 ```ts
 main({
-  scope: 'yourname',         // npm scope without '@' (required)
+  scope: 'yourname',         // npm scope without '@' (required unless template/fn omits {scope})
   binaryName: 'foo',         // binary name inside the platform pkg (required)
   from: import.meta.url,     // see "Why `from`" below (required)
   argv: process.argv.slice(2),  // optional; default
   resolveBin: () => '/path/to/foo', // optional; defaults to resolveBinary(opts)
   spawn: customSpawner,      // optional; defaults to defaultSpawner
+  platformPackage: '@{scope}/{platform}-{arch}', // optional; default shown
+  packageName: ({ platform, arch }) => `@scope/${platform}-${arch}`, // optional escape hatch
+  triples: { 'linux-x64': 'x86_64-unknown-linux-gnu' }, // required if template uses {triple}
 });
 ```
+
+### Platform package naming
+
+Default: `@{scope}/{platform}-{arch}` (the JS-shape convention,
+e.g. `@yourname/linux-x64`).
+
+Override with `platformPackage` (a template string) when your binaries are
+published under a different shape. Available placeholders:
+
+- `{scope}` — `opts.scope` (the template is expected to omit this for unscoped distributions)
+- `{platform}` — Node's `NodeJS.Platform` value (`linux`, `darwin`, `win32`, ...)
+- `{arch}` — Node's `NodeJS.Architecture` value (`x64`, `arm64`, ...)
+- `{triple}` — value from the `triples` map keyed on `${platform}-${arch}`
+
+Rust-triple shape (e.g. crates published by `putitoutthere`'s
+bundled-cli mode):
+
+```ts
+main({
+  scope: 'dark-factory',
+  binaryName: 'darkfactory',
+  from: import.meta.url,
+  platformPackage: '@{scope}/{triple}',
+  triples: {
+    'linux-x64':    'x86_64-unknown-linux-gnu',
+    'linux-arm64':  'aarch64-unknown-linux-gnu',
+    'darwin-x64':   'x86_64-apple-darwin',
+    'darwin-arm64': 'aarch64-apple-darwin',
+    'win32-x64':    'x86_64-pc-windows-msvc',
+  },
+});
+```
+
+Use `packageName` for shapes that templating cannot express. It receives
+`{ platform, arch, scope, binaryName }` and returns the package name.
+`packageName` takes precedence over `platformPackage` when both are set.
 
 ### `resolveBinary(opts): string`
 
@@ -135,13 +174,27 @@ itself errors.
 type Resolver = (id: string) => string;
 type Spawner = (cmd: string, args: readonly string[]) => Promise<number>;
 
+type Triples = Partial<Record<string, string>>;
+
+interface PackageNameContext {
+  platform: NodeJS.Platform;
+  arch: NodeJS.Architecture;
+  scope?: string;
+  binaryName: string;
+}
+
+type PackageNameFn = (ctx: PackageNameContext) => string;
+
 interface ResolveOpts {
-  scope: string;
+  scope?: string;
   binaryName: string;
   from: string | URL;
   platform?: NodeJS.Platform;
   arch?: NodeJS.Architecture;
   resolver?: Resolver;
+  platformPackage?: string;
+  packageName?: PackageNameFn;
+  triples?: Triples;
 }
 
 interface MainOpts extends ResolveOpts {

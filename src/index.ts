@@ -6,4 +6,7 @@ export type {
   Spawner,
   ResolveOpts,
   MainOpts,
+  Triples,
+  PackageNameContext,
+  PackageNameFn,
 } from './types.js';
