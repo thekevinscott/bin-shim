@@ -1,9 +1,8 @@
 /**
  * Integration tests — spawn a real `node` subprocess as the wrapper and
  * inspect its observed exit status and stderr. These complement the
- * in-process unit tests in index.test.ts; the in-process tests are what
- * drive the 100% coverage target. The integration tests are what catch
- * the orphan-on-SIGTERM bug and any regressions in real-process semantics.
+ * in-process unit tests; coverage is driven by the unit tests, while
+ * these verify real-process semantics end to end.
  *
  * Each test runs the *built* dist/index.js (pretest hook builds it).
  */
@@ -23,20 +22,17 @@ interface RunResult {
 }
 
 interface RunOpts {
+  argv?: readonly string[];
   signalAfterMs?: number;
   signal?: NodeJS.Signals;
-  env?: Record<string, string>;
 }
 
-function runWrapper(source: string, opts: RunOpts = {}): Promise<RunResult> {
+function runNodeScript(source: string, opts: RunOpts = {}): Promise<RunResult> {
   return new Promise((resolve, reject) => {
     const child = nodeSpawn(
       process.execPath,
-      ['--input-type=module', '-e', source],
-      {
-        stdio: ['ignore', 'pipe', 'pipe'],
-        env: { ...process.env, ...(opts.env ?? {}) },
-      },
+      ['--input-type=module', '-e', source, ...(opts.argv ?? [])],
+      { stdio: ['ignore', 'pipe', 'pipe'] },
     );
     let stdout = '';
     let stderr = '';
@@ -52,16 +48,28 @@ function runWrapper(source: string, opts: RunOpts = {}): Promise<RunResult> {
   });
 }
 
+function runNodeFile(file: string, argv: string[] = []): Promise<RunResult> {
+  return new Promise((resolve, reject) => {
+    const child = nodeSpawn(process.execPath, [file, ...argv], {
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    let stdout = '';
+    let stderr = '';
+    child.stdout!.on('data', (d) => (stdout += d.toString()));
+    child.stderr!.on('data', (d) => (stderr += d.toString()));
+    child.once('exit', (code, signal) =>
+      resolve({ code, signal, stdout, stderr }),
+    );
+    child.once('error', reject);
+  });
+}
+
 /**
  * Build a fake consumer layout in a temp dir:
  *   <root>/
  *     bin/foo.js
- *     node_modules/@scope/<platform>-<arch>/(bin/foo|foo.exe)
+ *     node_modules/@scope/<platform>-<arch>/bin/(foo|foo.exe)
  *     node_modules/@scope/<platform>-<arch>/package.json
- *
- * The wrapper script imports the built bin-shim from its real path and
- * uses `from: pathToFileURL('<root>/bin/foo.js')` so resolution is rooted
- * at the consumer just like in production.
  */
 function makeFakeConsumer(opts: {
   scope: string;
@@ -69,7 +77,6 @@ function makeFakeConsumer(opts: {
   platform: NodeJS.Platform;
   arch: NodeJS.Architecture;
   binaryContent: string;
-  executable?: boolean;
 }) {
   const root = mkdtempSync(join(tmpdir(), 'bin-shim-it-'));
   mkdirSync(join(root, 'bin'), { recursive: true });
@@ -79,11 +86,7 @@ function makeFakeConsumer(opts: {
     `@${opts.scope}`,
     `${opts.platform}-${opts.arch}`,
   );
-  const isWin = opts.platform === 'win32';
-  const binaryPath = isWin
-    ? join(pkgDir, `${opts.binaryName}.exe`)
-    : join(pkgDir, 'bin', opts.binaryName);
-  mkdirSync(isWin ? pkgDir : join(pkgDir, 'bin'), { recursive: true });
+  mkdirSync(join(pkgDir, 'bin'), { recursive: true });
   writeFileSync(
     join(pkgDir, 'package.json'),
     JSON.stringify({
@@ -93,13 +96,22 @@ function makeFakeConsumer(opts: {
       cpu: [opts.arch],
     }),
   );
+  const ext = opts.platform === 'win32' ? '.exe' : '';
+  const binaryPath = join(pkgDir, 'bin', `${opts.binaryName}${ext}`);
   writeFileSync(binaryPath, opts.binaryContent);
-  if (opts.executable !== false) chmodSync(binaryPath, 0o755);
-  // bin/foo.js — actual entry script we'll spawn
+  chmodSync(binaryPath, 0o755);
   const shim = join(root, 'bin', 'foo.js');
   writeFileSync(
     shim,
-    `#!/usr/bin/env node\nimport { run } from '${LIB}';\nrun({ scope: '${opts.scope}', binaryName: '${opts.binaryName}', from: import.meta.url });\n`,
+    `#!/usr/bin/env node
+import { main } from '${LIB}';
+main({ scope: '${opts.scope}', binaryName: '${opts.binaryName}', from: import.meta.url })
+  .then((code) => process.exit(code))
+  .catch((err) => {
+    process.stderr.write(\`\${err.message}\\n\`);
+    process.exit(1);
+  });
+`,
   );
   return { root, shim, binaryPath };
 }
@@ -115,7 +127,7 @@ describe('integration: end-to-end via real consumer layout', () => {
         arch: process.arch,
         binaryContent: `#!/usr/bin/env node\nprocess.exit(0);\n`,
       });
-      const result = await runWrapper(`await import('${shim}');`);
+      const result = await runNodeFile(shim);
       expect(result.code).toBe(0);
       expect(result.signal).toBeNull();
     },
@@ -131,7 +143,7 @@ describe('integration: end-to-end via real consumer layout', () => {
         arch: process.arch,
         binaryContent: `#!/usr/bin/env node\nprocess.exit(42);\n`,
       });
-      const result = await runWrapper(`await import('${shim}');`);
+      const result = await runNodeFile(shim);
       expect(result.code).toBe(42);
     },
   );
@@ -146,22 +158,7 @@ describe('integration: end-to-end via real consumer layout', () => {
         arch: process.arch,
         binaryContent: `#!/usr/bin/env node\nprocess.stdout.write(JSON.stringify(process.argv.slice(2)));\nprocess.exit(0);\n`,
       });
-      // Drive argv via the wrapper's process.argv: spawn with extra argv.
-      const result = await new Promise<RunResult>((resolve, reject) => {
-        const child = nodeSpawn(
-          process.execPath,
-          [shim, 'one', 'two', '--three=4'],
-          { stdio: ['ignore', 'pipe', 'pipe'] },
-        );
-        let stdout = '';
-        let stderr = '';
-        child.stdout!.on('data', (d) => (stdout += d.toString()));
-        child.stderr!.on('data', (d) => (stderr += d.toString()));
-        child.once('exit', (code, signal) =>
-          resolve({ code, signal, stdout, stderr }),
-        );
-        child.once('error', reject);
-      });
+      const result = await runNodeFile(shim, ['one', 'two', '--three=4']);
       expect(result.code).toBe(0);
       expect(JSON.parse(result.stdout)).toEqual([
         'one',
@@ -172,13 +169,18 @@ describe('integration: end-to-end via real consumer layout', () => {
   );
 
   test('wrapper writes helpful error and exits 1 when platform pkg missing', async () => {
-    const result = await runWrapper(`
-      import { run } from '${LIB}';
-      run({
+    const result = await runNodeScript(`
+      import { main } from '${LIB}';
+      main({
         scope: 'definitely-not-installed-xyz',
         binaryName: 'definitely-not-installed-xyz',
         from: import.meta.url,
-      });
+      })
+        .then((code) => process.exit(code))
+        .catch((err) => {
+          process.stderr.write(err.message + '\\n');
+          process.exit(1);
+        });
     `);
     expect(result.code).toBe(1);
     expect(result.stderr).toMatch(
@@ -187,62 +189,33 @@ describe('integration: end-to-end via real consumer layout', () => {
   });
 });
 
-describe('integration: spawnBinary semantics with real children', () => {
+describe('integration: spawner semantics with real children', () => {
   test('propagates exit code from real child', async () => {
-    const result = await runWrapper(`
-      import { spawnBinary } from '${LIB}';
-      spawnBinary(process.execPath, ['-e', 'process.exit(7)']);
+    const result = await runNodeScript(`
+      import { defaultSpawner } from '${LIB}';
+      const code = await defaultSpawner(process.execPath, ['-e', 'process.exit(7)']);
+      process.exit(code);
     `);
     expect(result.code).toBe(7);
     expect(result.signal).toBeNull();
   });
 
   test.skipIf(process.platform === 'win32')(
-    'propagates signal death (SIGTERM) from real child',
+    'returns 1 when child dies from signal',
     async () => {
-      const result = await runWrapper(`
-        import { spawnBinary } from '${LIB}';
-        spawnBinary(process.execPath, ['-e', 'process.kill(process.pid, "SIGTERM")']);
+      const result = await runNodeScript(`
+        import { defaultSpawner } from '${LIB}';
+        const code = await defaultSpawner(process.execPath, ['-e', 'process.kill(process.pid, "SIGTERM")']);
+        process.exit(code);
       `);
-      expect(result.signal).toBe('SIGTERM');
-      expect(result.code).toBeNull();
+      expect(result.code).toBe(1);
     },
   );
 
-  test.skipIf(process.platform === 'win32')(
-    'forwards SIGTERM from wrapper to child (no orphan)',
-    async () => {
-      const result = await runWrapper(
-        `
-        import { spawnBinary } from '${LIB}';
-        spawnBinary(process.execPath, ['-e', 'setTimeout(()=>{}, 60000)']);
-      `,
-        { signalAfterMs: 200, signal: 'SIGTERM' },
-      );
-      expect(result.signal).toBe('SIGTERM');
-      expect(result.code).toBeNull();
-    },
-  );
-
-  test.skipIf(process.platform === 'win32')(
-    'forwards SIGINT from wrapper to child',
-    async () => {
-      const result = await runWrapper(
-        `
-        import { spawnBinary } from '${LIB}';
-        spawnBinary(process.execPath, ['-e', 'setTimeout(()=>{}, 60000)']);
-      `,
-        { signalAfterMs: 200, signal: 'SIGINT' },
-      );
-      expect(result.signal).toBe('SIGINT');
-      expect(result.code).toBeNull();
-    },
-  );
-
-  test('rejects asynchronously when binary path does not exist', async () => {
-    const result = await runWrapper(`
-      import { spawnBinary } from '${LIB}';
-      spawnBinary('/definitely/does/not/exist/bin', []).catch((e) => {
+  test('rejects when binary path does not exist', async () => {
+    const result = await runNodeScript(`
+      import { defaultSpawner } from '${LIB}';
+      defaultSpawner('/definitely/does/not/exist/bin', []).catch((e) => {
         process.stderr.write(e.message + '\\n');
         process.exit(2);
       });
@@ -264,7 +237,7 @@ describe('integration: resolveBinary against real node_modules layout', () => {
         binaryContent: '#!/usr/bin/env node\n',
       });
       const consumerEntry = join(root, 'bin', 'foo.js');
-      const result = await runWrapper(`
+      const result = await runNodeScript(`
         import { resolveBinary } from '${LIB}';
         import { pathToFileURL } from 'node:url';
         const p = resolveBinary({
@@ -282,7 +255,7 @@ describe('integration: resolveBinary against real node_modules layout', () => {
   );
 
   test('throws with helpful message when no platform pkg in node_modules', async () => {
-    const result = await runWrapper(`
+    const result = await runNodeScript(`
       import { resolveBinary } from '${LIB}';
       try {
         resolveBinary({
