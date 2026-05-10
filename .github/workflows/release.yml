@@ -1,0 +1,35 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  release:
+    uses: thekevinscott/putitoutthere/.github/workflows/release.yml@v0
+    permissions:
+      contents: write
+      id-token: write
+
+  # Pasted verbatim from putitoutthere's quickstart. Skipped automatically
+  # when the run produces no PyPI artifacts (bin-shim is npm-only); kept
+  # in place so adding a future PyPI package is a config-only change.
+  pypi-publish:
+    needs: release
+    if: needs.release.outputs.has_pypi == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: '*-sdist'
+          path: dist/
+          merge-multiple: true
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: '*-wheel-*'
+          path: dist/
+          merge-multiple: true
+      - uses: pypa/gh-action-pypi-publish@release/v1
