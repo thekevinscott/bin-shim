@@ -11,6 +11,12 @@ inherited stdio, and exit-code propagation. It does not generate the
 per-platform packages or write the `optionalDependencies` block — those
 are publishing concerns, not runtime concerns.
 
+## Install
+
+```sh
+npm install bin-shim
+```
+
 ## Quickstart
 
 Three pieces fit together. You need all three.
