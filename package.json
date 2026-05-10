@@ -1,0 +1,42 @@
+{
+  "name": "bin-shim",
+  "version": "0.1.0",
+  "description": "Runtime shim for distributing native binaries as npm packages via optionalDependencies",
+  "license": "MIT",
+  "repository": "https://github.com/thekevinscott/bin-shim",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "files": ["dist/"],
+  "engines": { "node": ">=20.20.0" },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "pretest": "pnpm run build",
+    "test": "vitest run",
+    "precoverage": "pnpm run build",
+    "coverage": "vitest run --coverage",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "typecheck:tests": "tsc -p tsconfig.test.json",
+    "prepublishOnly": "pnpm run build"
+  },
+  "keywords": [
+    "bin",
+    "shim",
+    "wrapper",
+    "native",
+    "binary",
+    "optionalDependencies"
+  ],
+  "devDependencies": {
+    "@types/node": "^22.9.0",
+    "@vitest/coverage-v8": "^2.1.5",
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.5"
+  }
+}
