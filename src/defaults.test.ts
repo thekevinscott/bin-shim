@@ -1,4 +1,7 @@
 import { describe, it, expect } from 'vitest';
+import { chmodSync, mkdtempSync, statSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { defaultResolver, defaultSpawner } from './defaults.js';
 
 describe('defaultResolver', () => {
@@ -28,4 +31,32 @@ describe('defaultSpawner', () => {
     ]);
     expect(code).toBe(1);
   });
+
+  // chmod tests are POSIX-only: Windows ignores exec bits and can't
+  // spawn a shebang script without an explicit interpreter.
+  it.skipIf(process.platform === 'win32')(
+    'chmods a non-executable target before spawning',
+    async () => {
+      const dir = mkdtempSync(join(tmpdir(), 'bin-shim-chmod-'));
+      const bin = join(dir, 'script.js');
+      writeFileSync(bin, '#!/usr/bin/env node\nprocess.exit(0)\n');
+      chmodSync(bin, 0o644);
+      const code = await defaultSpawner(bin, []);
+      expect(code).toBe(0);
+      expect(statSync(bin).mode & 0o111).not.toBe(0);
+    },
+  );
+
+  it.skipIf(process.platform === 'win32')(
+    'leaves mode untouched when already executable',
+    async () => {
+      const dir = mkdtempSync(join(tmpdir(), 'bin-shim-chmod-'));
+      const bin = join(dir, 'script.js');
+      writeFileSync(bin, '#!/usr/bin/env node\nprocess.exit(0)\n');
+      chmodSync(bin, 0o755);
+      const before = statSync(bin).mode;
+      await defaultSpawner(bin, []);
+      expect(statSync(bin).mode).toBe(before);
+    },
+  );
 });

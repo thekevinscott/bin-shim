@@ -12,7 +12,7 @@
  * below 100%. Driving the event directly via a mocked spawn lets every
  * platform exercise both branches deterministically.
  */
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { EventEmitter } from 'node:events';
 
 vi.mock('node:child_process', async (importActual) => {
@@ -21,10 +21,25 @@ vi.mock('node:child_process', async (importActual) => {
   return { ...actual, spawn: vi.fn() };
 });
 
+vi.mock('node:fs', async (importActual) => {
+  const actual = await importActual<typeof import('node:fs')>();
+  return { ...actual, statSync: vi.fn(), chmodSync: vi.fn() };
+});
+
 import { spawn } from 'node:child_process';
+import { chmodSync, statSync } from 'node:fs';
 import { defaultSpawner } from './defaults.js';
 
 describe('defaultSpawner (mocked spawn)', () => {
+  beforeEach(() => {
+    vi.mocked(statSync).mockReset();
+    vi.mocked(chmodSync).mockReset();
+    vi.mocked(spawn).mockReset();
+    vi.mocked(statSync).mockImplementation(() => {
+      throw new Error('ENOENT');
+    });
+  });
+
   it('resolves with 1 when exit code is null (signal-death proxy)', async () => {
     const child = new EventEmitter();
     vi.mocked(spawn).mockReturnValue(child as never);
@@ -48,5 +63,42 @@ describe('defaultSpawner (mocked spawn)', () => {
     const boom = new Error('boom');
     child.emit('error', boom);
     await expect(promise).rejects.toBe(boom);
+  });
+
+  // Cross-platform coverage for ensureExecutable. The real-spawn POSIX
+  // tests in defaults.test.ts exercise these too, but Windows skips
+  // them, so we drive the branches here via mocked fs.
+  it('chmods to 0755 when no exec bit is set', async () => {
+    vi.mocked(statSync).mockReturnValue({ mode: 0o644 } as never);
+    vi.mocked(chmodSync).mockReturnValue();
+    const child = new EventEmitter();
+    vi.mocked(spawn).mockReturnValue(child as never);
+    const promise = defaultSpawner('/some/bin', []);
+    child.emit('exit', 0);
+    await promise;
+    expect(chmodSync).toHaveBeenCalledWith('/some/bin', 0o644 | 0o755);
+  });
+
+  it('skips chmod when an exec bit is already set', async () => {
+    vi.mocked(statSync).mockReturnValue({ mode: 0o755 } as never);
+    vi.mocked(chmodSync).mockReturnValue();
+    const child = new EventEmitter();
+    vi.mocked(spawn).mockReturnValue(child as never);
+    const promise = defaultSpawner('/some/bin', []);
+    child.emit('exit', 0);
+    await promise;
+    expect(chmodSync).not.toHaveBeenCalled();
+  });
+
+  it('swallows stat errors and continues to spawn', async () => {
+    vi.mocked(statSync).mockImplementation(() => {
+      throw new Error('ENOENT');
+    });
+    const child = new EventEmitter();
+    vi.mocked(spawn).mockReturnValue(child as never);
+    const promise = defaultSpawner('/missing', []);
+    child.emit('exit', 0);
+    expect(await promise).toBe(0);
+    expect(chmodSync).not.toHaveBeenCalled();
   });
 });
