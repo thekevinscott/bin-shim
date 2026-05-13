@@ -1,4 +1,4 @@
-import { defaultResolver } from '../defaults.js';
+import { defaultResolver } from '../defaults/index.js';
 import type { ResolveOpts } from '../types.js';
 
 const DEFAULT_TEMPLATE = '@{scope}/{platform}-{arch}';

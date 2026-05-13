@@ -1,6 +1,6 @@
 export { main } from './cli/main.js';
 export { resolveBinary } from './resolve/binary.js';
-export { defaultResolver, defaultSpawner } from './defaults.js';
+export { defaultResolver, defaultSpawner } from './defaults/index.js';
 export type {
   Resolver,
   Spawner,
