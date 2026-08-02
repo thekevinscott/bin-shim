@@ -2,17 +2,20 @@
 version = 1
 
 [[package]]
+# Keeps the pre-monorepo identifier and `v{version}` tag format so release
+# history stays continuous (v0.1.0 was tagged before the packages/ split).
 name = "bin-shim"
 kind = "npm"
 npm = "bin-shim"
-path = "."
+path = "packages/javascript"
 first_version = "0.1.0"
 tag_format = "v{version}"
 globs = [
-  "src/**",
-  "package.json",
+  "packages/javascript/src/**",
+  "packages/javascript/package.json",
+  "packages/javascript/tsconfig.json",
+  "packages/javascript/README.md",
+  "packages/javascript/CHANGELOG.md",
   "pnpm-lock.yaml",
-  "tsconfig.json",
-  "README.md",
   "LICENSE",
 ]
