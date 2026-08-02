@@ -1,0 +1,28 @@
+name: Python Lint
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'packages/python/**'
+      - '.github/workflows/py-lint.yaml'
+  pull_request:
+    paths:
+      - 'packages/python/**'
+      - '.github/workflows/py-lint.yaml'
+
+permissions: { contents: read }
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Lint
+        working-directory: packages/python
+        run: make lint

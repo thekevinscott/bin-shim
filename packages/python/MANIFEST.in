@@ -1,0 +1,6 @@
+include README.md CHANGELOG.md
+
+# Colocated unit tests (src/bin_shim/**/*_test.py) are not part of the
+# distributed package — keep them out of the sdist (the wheel is handled by
+# the build_py shim in setup.py).
+global-exclude *_test.py

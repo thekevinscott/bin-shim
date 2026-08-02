@@ -19,3 +19,23 @@ globs = [
   "pnpm-lock.yaml",
   "LICENSE",
 ]
+
+[[package]]
+# py/-prefixed identifier for tag namespacing (py/bin-shim-v{version}),
+# mirroring cachetta. Must match pyproject.toml [project].name — piot's
+# pre-flight asserts this.
+name = "py/bin-shim"
+kind = "pypi"
+pypi = "bin-shim"
+build = "setuptools"
+path = "packages/python"
+first_version = "0.1.0"
+globs = [
+  "packages/python/src/**",
+  "packages/python/pyproject.toml",
+  "packages/python/setup.py",
+  "packages/python/MANIFEST.in",
+  "packages/python/README.md",
+  "packages/python/CHANGELOG.md",
+  "LICENSE",
+]
