@@ -1,0 +1,93 @@
+name: Fixture Conformance
+
+# The fixture tier of spec/conformance.md: build the reference napi + pyo3
+# crate once, then run both languages' conformance suites against it. The
+# per-language workflows run the fake tier only — those suites skip
+# themselves when the fixture is absent, so this job is what exercises real
+# mid-run signal delivery, real native fd writes, and row 8.
+#
+# POSIX only. Windows ctrl-c validation is tracked separately (#15).
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'fixtures/native/**'
+      - 'packages/**'
+      - 'spec/**'
+      - '.github/workflows/fixture-conformance.yaml'
+  pull_request:
+    paths:
+      - 'fixtures/native/**'
+      - 'packages/**'
+      - 'spec/**'
+      - '.github/workflows/fixture-conformance.yaml'
+
+permissions: { contents: read }
+
+jobs:
+  conformance:
+    name: Fixture tier (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: fixtures/native
+
+      - name: Fixture unit tests
+        working-directory: fixtures/native
+        run: cargo test --release
+
+      - name: Build and stage the fixture
+        run: ./fixtures/native/build.sh
+
+      # --- JavaScript -----------------------------------------------------
+      - uses: pnpm/action-setup@v4
+        with: { version: 10 }
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install JS dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build the JS package
+        working-directory: packages/javascript
+        run: pnpm run build
+
+      - name: JS fixture-tier conformance
+        working-directory: packages/javascript
+        run: pnpm exec vitest run src/fixture.conformance.test.ts
+
+      # --- Python ---------------------------------------------------------
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Install Python dependencies
+        working-directory: packages/python
+        run: uv sync
+
+      - name: Python fixture-tier conformance
+        working-directory: packages/python
+        run: uv run pytest tests/fixture_conformance_test.py -v
+
+      # A skipped suite would otherwise pass silently and this whole job
+      # would prove nothing — fail loudly if the fixture wasn't picked up.
+      - name: Assert the fixture tier actually ran
+        working-directory: packages/python
+        run: |
+          set -euo pipefail
+          if uv run pytest tests/fixture_conformance_test.py -q 2>&1 | grep -qi 'skipped'; then
+            echo "::error::fixture-tier suite skipped — the built fixture was not found"
+            exit 1
+          fi

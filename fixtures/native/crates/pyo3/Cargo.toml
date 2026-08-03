@@ -1,0 +1,17 @@
+[package]
+name = "bin-shim-fixture-pyo3"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+license.workspace = true
+
+[lib]
+# Import name on the Python side; must match the #[pymodule] function.
+name = "bin_shim_fixture"
+crate-type = ["cdylib"]
+
+[dependencies]
+bin-shim-fixture-core = { path = "../core" }
+# abi3-py310 matches the package's requires-python floor, so one build of
+# the fixture works across every Python the test matrix runs.
+pyo3 = { version = "0.23", features = ["extension-module", "abi3-py310"] }
