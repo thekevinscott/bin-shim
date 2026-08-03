@@ -25,6 +25,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "bin-shim-fixture-ctrl-event"
+version = "0.0.0"
+
+[[package]]
 name = "bin-shim-fixture-napi"
 version = "0.0.0"
 dependencies = [

@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/core", "crates/napi", "crates/pyo3"]
+members = ["crates/core", "crates/napi", "crates/pyo3", "crates/ctrl-event"]
 
 [workspace.package]
 version = "0.0.0"

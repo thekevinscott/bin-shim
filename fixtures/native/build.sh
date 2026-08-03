@@ -45,6 +45,9 @@ stage bin_shim_fixture_napi fixture.node
 # name must match the #[pymodule] function.
 if [[ "${OS:-}" == "Windows_NT" ]]; then
   stage bin_shim_fixture bin_shim_fixture.pyd
+  # The console-control harness used by conformance rows 4-5.
+  cp "$target/ctrl-event.exe" "$dist/ctrl-event.exe"
+  echo "staged ctrl-event.exe -> dist/ctrl-event.exe"
 else
   stage bin_shim_fixture bin_shim_fixture.so
 fi
