@@ -75,18 +75,34 @@ additionally pinned by the colocated unit suites (`src/bin_shim/*_test.py`).
 | 7 | `describe_row_7_argv_passthrough::test_utf8_spaces_quotes_and_double_dash_arrive_byte_faithfully` |
 | 8 | — fixture tier, pending [#14](https://github.com/thekevinscott/bin-shim/issues/14) |
 
-### JavaScript (`packages/javascript`)
+### JavaScript (`packages/javascript`, in-process strategy) — fake tier
 
-The npm package currently ships the **spawn** strategy only, which delegates
-process semantics to the OS (the child *is* the native process); rows 2–4
-therefore don't apply to it as written. The in-process strategy and its
-row mapping land with
-[#13](https://github.com/thekevinscott/bin-shim/issues/13).
+Suite: `src/conformance.test.ts` (subprocess-based; the launcher is written
+to a real file rather than run via `node -e`, so `process.argv.slice(2)` has
+production semantics. POSIX rows assert `signal === 'SIG…'` with a null exit
+code, i.e. `WIFSIGNALED`). Launcher-internal steps are additionally pinned by
+the colocated unit suites (`src/**/*.test.ts`).
 
-| Row | Status |
-|-----|--------|
-| 1 | spawn: exit-code propagation covered by `src/cli/main.test.ts` / `src/defaults/spawner.test.ts` |
-| 2–8 | in-process strategy pending #13 |
+| Row | Test |
+|-----|------|
+| 1 | `row 1: exit-code passthrough > process exits with exactly the returned code 0/1/101/255` |
+| 2 | `row 2: SIGINT shutdown (POSIX) > 130 becomes genuine signal death by SIGINT` |
+| 3 | `row 3: SIGTERM shutdown (POSIX) > 143 becomes genuine signal death by SIGTERM` |
+| 4 | `row 4: Windows plain exit > 130 exits plainly with 130, with no re-raise` (Windows CI) |
+| 5 | — Python-only row |
+| 6 | `row 6: host stdio flushed before the native call > buffered host output lands ahead of native fd-1 writes` |
+| 7 | `row 7: argv passthrough > UTF-8, spaces, quotes and -- arrive byte-faithfully` |
+| 8 | — fixture tier, pending [#14](https://github.com/thekevinscott/bin-shim/issues/14) |
+
+### JavaScript (`packages/javascript`, spawn strategy)
+
+The spawn strategy delegates process semantics to the OS — the child *is* the
+native process — so rows 2–4 hold by construction rather than by translation.
+
+| Row | Test |
+|-----|------|
+| 1 | `src/cli/main.test.ts`, `src/defaults/spawner.test.ts`, `src/integration.test.ts` |
+| 2–8 | N/A — owned by the OS, not by the launcher |
 
 ### Fixture tier
 

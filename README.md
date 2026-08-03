@@ -10,11 +10,13 @@ with identical process semantics everywhere. Two packages, one contract:
 
 ## What it does
 
-**JavaScript (spawn strategy, the esbuild pattern):** a top-level npm package
-with no real code delegates to a per-platform package containing the prebuilt
-binary. `bin-shim` handles platform detection, path resolution, spawning with
-inherited stdio, and exit-code propagation. See
-[`packages/javascript/README.md`](packages/javascript/README.md).
+**JavaScript (both strategies):** the *spawn* strategy is the esbuild
+pattern — a top-level npm package with no real code delegates to a
+per-platform package containing the prebuilt binary, and `bin-shim` handles
+platform detection, path resolution, spawning with inherited stdio, and
+exit-code propagation. The *in-process* strategy instead loads a napi addon
+and calls `runCli(argv)` in the same process, owning the process semantics
+itself. See [`packages/javascript/README.md`](packages/javascript/README.md).
 
 **Python (in-process strategy):** the native CLI is exposed as a library
 function `run_cli(argv) -> int` via bindings (e.g. pyo3), and the launcher
