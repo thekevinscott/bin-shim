@@ -218,6 +218,101 @@ describeFixture('fixture tier: row 8 — prompt exit', () => {
   });
 });
 
+/**
+ * Rows 4-5 on Windows: a **real console control event** delivered to a
+ * running process, rather than a fixture that merely returns 130.
+ *
+ * Windows will only target a console control event at a process group, and
+ * only a process created with CREATE_NEW_PROCESS_GROUP is in one — a flag
+ * Node's `spawn` cannot set (`detached` maps to DETACHED_PROCESS, leaving
+ * the child with no console to signal). So the fixture ships a `ctrl-event`
+ * helper that both spawns the target onto its own console and raises the
+ * event there, which is also what keeps the event off the test runner.
+ */
+const CTRL_EVENT = fileURLToPath(
+  new URL('../../../fixtures/native/dist/ctrl-event.exe', import.meta.url),
+);
+const hasCtrlEvent = process.platform === 'win32' && existsSync(CTRL_EVENT);
+const describeWindowsCtrl = hasCtrlEvent ? describe : describe.skip;
+
+describeWindowsCtrl('fixture tier: row 4 — Windows ctrl-c', () => {
+  function launcherFile(): string {
+    const dir = mkdtempSync(join(tmpdir(), 'bin-shim-fx-'));
+    const file = join(dir, 'launcher.mjs');
+    writeFileSync(
+      file,
+      `import { createRequire } from 'node:module';
+       import { mainInProcess } from '${LIB}';
+       const require = createRequire(import.meta.url);
+       const addon = require(${JSON.stringify(FIXTURE)});
+       mainInProcess({
+         scope: 'fx',
+         binaryName: 'fixture',
+         from: import.meta.url,
+         runCli: addon.runCli,
+       }).then((code) => process.exit(code));
+      `,
+    );
+    return file;
+  }
+
+  function runWithCtrlEvent(event: 'c' | 'break'): Promise<RunResult> {
+    const started = Date.now();
+    return new Promise((resolve, reject) => {
+      const child = nodeSpawn(
+        CTRL_EVENT,
+        ['spawn', process.execPath, launcherFile(), 'sleep', '10000'],
+        { stdio: ['ignore', 'pipe', 'pipe'] },
+      );
+      let stdout = '';
+      let stderr = '';
+      let pid: string | undefined;
+      let sent = false;
+      const maybeSend = () => {
+        const match = /PID=(\d+)/.exec(stdout);
+        if (match) pid = match[1];
+        // Both conditions matter: the pid tells us who to signal, and the
+        // readiness line proves the console handler is installed.
+        if (!sent && pid && stderr.includes('fixture: ready')) {
+          sent = true;
+          nodeSpawn(CTRL_EVENT, ['send', pid, event], { stdio: 'inherit' });
+        }
+      };
+      child.stdout!.on('data', (d) => {
+        stdout += d.toString();
+        maybeSend();
+      });
+      child.stderr!.on('data', (d) => {
+        stderr += d.toString();
+        maybeSend();
+      });
+      const timer = setTimeout(() => {
+        child.kill();
+        reject(new Error(`no exit within 30s; stdout=${stdout} stderr=${stderr}`));
+      }, 30000);
+      child.once('exit', (code, signal) => {
+        clearTimeout(timer);
+        resolve({ code, signal, stdout, stderr, elapsedMs: Date.now() - started });
+      });
+      child.once('error', reject);
+    });
+  }
+
+  test('a real CTRL_C_EVENT exits plainly with 130, with no re-raise', async () => {
+    const result = await runWithCtrlEvent('c');
+    expect(result.stderr).toContain('fixture: graceful shutdown');
+    // Windows has no signal death: the launcher must exit(130) plainly.
+    expect(result.code).toBe(130);
+    expect(result.signal).toBeNull();
+  }, 40000);
+
+  test('a real CTRL_BREAK_EVENT takes the same shutdown path', async () => {
+    const result = await runWithCtrlEvent('break');
+    expect(result.stderr).toContain('fixture: graceful shutdown');
+    expect(result.code).toBe(130);
+  }, 40000);
+});
+
 describeFixture('fixture tier: entry-point resolution against the real addon', () => {
   test('resolveRunCli finds the napi-camelCased runCli export', async () => {
     // napi renames Rust's `run_cli` to `runCli`, which is the npm package's

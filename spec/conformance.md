@@ -30,7 +30,7 @@ Process rule (from `AGENTS.md`): any semantics change lands here as a row
 | 1 | **Exit-code passthrough**: `run_cli` returns 0 / 1 / 101 / 255 → process exits with exactly that code | fake |
 | 2 | **SIGINT mid-run (POSIX)**: core shuts down gracefully, `run_cli` returns 130 → launcher restores `SIG_DFL` and re-raises SIGINT to itself, so the parent observes genuine signal death (`WIFSIGNALED`), not a plain exit | fake (return-code path); fixture (real mid-run delivery) |
 | 3 | **SIGTERM mid-run (POSIX)**: same shape, code 143, re-raise SIGTERM | fake (return-code path); fixture (real mid-run delivery) |
-| 4 | **Ctrl-C on Windows**: `run_cli` returns 130 → plain `exit(130)` (no re-raise on Windows) | fake; real `CTRL_C_EVENT` validation tracked in [#15](https://github.com/thekevinscott/bin-shim/issues/15) |
+| 4 | **Ctrl-C on Windows**: `run_cli` returns 130 → plain `exit(130)` (no re-raise on Windows) | fake; **validated** against a real `CTRL_C_EVENT` at the fixture tier |
 | 5 | **Python only**: a `KeyboardInterrupt` raised around the native call is treated as the SIGINT-shutdown path (row 2), and no traceback ever reaches the user; pending interrupts are cleared before the launcher acts on the return code | fake |
 | 6 | **Host stdio flushed** before invoking `run_cli` (the native side writes fds 1/2 directly; unflushed host buffers must not interleave out of order) | fake; fixture for a real native writer |
 | 7 | **argv passthrough**: UTF-8, embedded spaces, quotes, `--` — delivered to `run_cli` byte-faithfully, no shell interpretation | fake |
@@ -147,8 +147,8 @@ are the rows the fake tier cannot state honestly. POSIX only; run by
 | 1 | `fixture tier: row 1 …` | `describe_row_1_exit_code_passthrough::…` |
 | 2 | `fixture tier: row 2 — SIGINT delivered mid-run` | `describe_row_2_sigint_delivered_mid_run::it_produces_genuine_signal_death` |
 | 3 | `fixture tier: row 3 — SIGTERM delivered mid-run` | `describe_row_3_sigterm_delivered_mid_run::it_produces_genuine_signal_death` |
-| 4 | — Windows, pending [#15](https://github.com/thekevinscott/bin-shim/issues/15) | — Windows, pending #15 |
-| 5 | — Python-only row | fake tier (a `KeyboardInterrupt` is raised by the host, not the addon) |
+| 4 | `fixture tier: row 4 — Windows ctrl-c` | `describe_row_4_windows_ctrl_c::…` |
+| 5 | — Python-only row | `describe_row_5_windows_keyboard_interrupt::…` (Windows), plus the fake tier on POSIX |
 | 6 | `fixture tier: row 6 — native fd-1 writes interleave correctly` | `describe_row_6_native_fd1_writes_interleave_correctly::…` |
 | 7 | `fixture tier: row 7 — argv passthrough` | `describe_row_7_argv_passthrough::…` |
 | 8 | `fixture tier: row 8 — prompt exit` | `describe_row_8_prompt_exit::…` |
@@ -157,5 +157,32 @@ Row 8 exists only at this tier: the fixture leaves four OS threads sleeping
 for 600s and returns immediately, and the row asserts the process still exits
 at once. A fake has no native threads, so there is nothing for it to prove.
 
-Windows ctrl-c validation (rows 4–5 against real `CTRL_C_EVENT`) is tracked
-in [#15](https://github.com/thekevinscott/bin-shim/issues/15).
+### Windows: rows 4–5 against a real `CTRL_C_EVENT`
+
+These rows were **designed but untested** when the spec was first written —
+an open item inherited from dirsql's spike. They are now validated on
+Windows CI against the reference fixture, which registers a real console
+control handler via `SetConsoleCtrlHandler`.
+
+Getting a genuine event to one process takes more machinery than POSIX's
+`kill`, and the constraints are worth recording:
+
+- `GenerateConsoleCtrlEvent(CTRL_C_EVENT, 0)` reaches **every** process
+  sharing the caller's console, which would include the test runner.
+- Windows only targets a specific process **group**, and only a process
+  created with `CREATE_NEW_PROCESS_GROUP` is in one. Node cannot set that
+  flag — `detached` maps to `DETACHED_PROCESS`, which leaves the child with
+  no console at all, so there is then nothing to send a console event to.
+- A process in a new group starts with Ctrl-C *disabled*, inheriting an
+  ignore-handler. The fixture clears that with `SetConsoleCtrlHandler(NULL,
+  FALSE)` before installing its own, or the event never arrives.
+
+So the fixture ships a `ctrl-event` helper (`fixtures/native/crates/ctrl-event`)
+owning both halves: `spawn` starts the target on its own console and in its
+own group and reports its pid; `send` attaches to that console and raises the
+event there, which is what keeps it off the test runner.
+
+Both `CTRL_C_EVENT` and `CTRL_BREAK_EVENT` are exercised. Windows reports one
+console event rather than distinct signals, so the fixture maps both to the
+SIGINT-shaped shutdown and returns 130 — and the launcher exits plainly with
+130, never by signal, since Windows has no signal death to produce.

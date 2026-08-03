@@ -6,7 +6,8 @@ name: Fixture Conformance
 # themselves when the fixture is absent, so this job is what exercises real
 # mid-run signal delivery, real native fd writes, and row 8.
 #
-# POSIX only. Windows ctrl-c validation is tracked separately (#15).
+# The `conformance` job is POSIX; `windows-ctrl` below covers rows 4-5 with
+# real console control events.
 
 on:
   push:
@@ -93,5 +94,67 @@ jobs:
           set -euo pipefail
           if uv run pytest tests/fixture_conformance_test.py -q 2>&1 | grep -qi 'skipped'; then
             echo "::error::fixture-tier suite skipped — the built fixture was not found"
+            exit 1
+          fi
+
+  # Rows 4-5: real console control events on Windows. Kept as its own job
+  # because the mechanism is entirely different from POSIX — see the
+  # ctrl-event helper crate for why neither Node nor a plain
+  # GenerateConsoleCtrlEvent call from the runner can do this safely.
+  windows-ctrl:
+    name: Fixture tier (windows-latest, ctrl-c)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: fixtures/native
+
+      - name: Build and stage the fixture
+        shell: bash
+        run: ./fixtures/native/build.sh
+
+      - uses: pnpm/action-setup@v4
+        with: { version: 10 }
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install JS dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build the JS package
+        working-directory: packages/javascript
+        run: pnpm run build
+
+      - name: JS Windows ctrl-c conformance
+        working-directory: packages/javascript
+        run: pnpm exec vitest run src/fixture.conformance.test.ts
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Install Python dependencies
+        working-directory: packages/python
+        run: uv sync
+
+      - name: Python Windows ctrl-c conformance
+        working-directory: packages/python
+        run: uv run pytest tests/fixture_conformance_test.py -v
+
+      # These rows are the entire point of this job; a skip here means the
+      # harness did not run and the job proved nothing.
+      - name: Assert rows 4-5 actually ran
+        shell: bash
+        working-directory: packages/python
+        run: |
+          set -euo pipefail
+          if uv run pytest tests/fixture_conformance_test.py -q 2>&1 | grep -qi 'skipped'; then
+            echo "::error::Windows ctrl-c rows skipped — the harness was not found"
             exit 1
           fi

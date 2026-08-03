@@ -128,6 +128,103 @@ def describe_row_7_argv_passthrough():
         assert json.loads(stdout.decode("utf-8")) == payload
 
 
+CTRL_EVENT = FIXTURE_DIR / "ctrl-event.exe"
+
+windows_ctrl = pytest.mark.skipif(
+    sys.platform != "win32" or not CTRL_EVENT.exists(),
+    reason="Windows console-control harness not available",
+)
+
+
+def run_with_ctrl_event(event):
+    """Run the launcher on its own console and deliver a real control event.
+
+    Windows only targets console control events at a process *group*, and
+    the event reaches every process on the console — so the target has to be
+    isolated onto its own console or the test runner would take the hit too.
+    The fixture's `ctrl-event` helper owns both halves: `spawn` creates the
+    target with CREATE_NEW_CONSOLE|CREATE_NEW_PROCESS_GROUP and reports its
+    pid, `send` attaches to that console and raises the event there.
+    """
+    env = dict(os.environ)
+    env["PYTHONPATH"] = os.pathsep.join(
+        [str(FIXTURE_DIR)] + [p for p in [env.get("PYTHONPATH", "")] if p]
+    )
+    proc = subprocess.Popen(
+        [
+            str(CTRL_EVENT),
+            "spawn",
+            sys.executable,
+            str(LAUNCHER),
+            "sleep",
+            "10000",
+        ],
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    # The helper prints the target's pid before the target starts working.
+    # (Popen types these as optional; PIPE above guarantees they are not.)
+    assert proc.stdout is not None and proc.stderr is not None
+    pid_line = proc.stdout.readline().decode("utf-8", "replace")
+    assert pid_line.startswith("PID="), f"helper did not report a pid: {pid_line!r}"
+    pid = pid_line.strip().removeprefix("PID=")
+    # Then wait for the fixture's readiness line, so the console handler is
+    # provably installed before the event is raised.
+    stderr_seen = signal_when_ready_bytes(proc)
+    sent = subprocess.run(
+        [str(CTRL_EVENT), "send", pid, event],
+        capture_output=True,
+        timeout=30,
+    )
+    assert sent.returncode == 0, (
+        f"ctrl-event send failed ({sent.returncode}): {sent.stderr!r}"
+    )
+    stdout, rest = proc.communicate(timeout=30)
+    return proc.returncode, stdout, stderr_seen + rest
+
+
+def signal_when_ready_bytes(proc, timeout=15.0):
+    """Block until the fixture reports readiness, returning stderr so far."""
+    deadline = time.monotonic() + timeout
+    seen = b""
+    while time.monotonic() < deadline:
+        line = proc.stderr.readline()
+        if not line:
+            break
+        seen += line
+        if b"fixture: ready" in seen:
+            return seen
+    raise AssertionError(f"fixture never reported readiness; stderr: {seen!r}")
+
+
+def describe_row_4_windows_ctrl_c():
+    @windows_ctrl
+    def it_exits_plainly_with_130_and_never_dies_by_signal():
+        returncode, _stdout, stderr = run_with_ctrl_event("c")
+        assert b"graceful shutdown" in stderr
+        # Windows has no signal death; a plain 130 is the whole contract.
+        assert returncode == 130
+
+    @windows_ctrl
+    def it_treats_ctrl_break_as_the_same_shutdown_path():
+        returncode, _stdout, stderr = run_with_ctrl_event("break")
+        assert b"graceful shutdown" in stderr
+        assert returncode == 130
+
+
+def describe_row_5_windows_keyboard_interrupt():
+    @windows_ctrl
+    def it_never_shows_the_user_a_traceback():
+        # A CTRL_C_EVENT also makes CPython raise KeyboardInterrupt in the
+        # main thread. Whichever path wins, the user must never see a
+        # traceback and the code must still be 130.
+        returncode, _stdout, stderr = run_with_ctrl_event("c")
+        assert returncode == 130
+        assert b"Traceback" not in stderr
+        assert b"KeyboardInterrupt" not in stderr
+
+
 def describe_row_8_prompt_exit():
     def it_does_not_let_lingering_native_threads_hold_the_process_open():
         # The fixture leaves four threads sleeping for 600s and returns 0.

@@ -107,16 +107,80 @@ impl Drop for SignalGuard {
     }
 }
 
-#[cfg(not(unix))]
+/// Windows has no POSIX signals; the console sends control *events* instead.
+/// We register a console control handler for the duration of the run, which
+/// is the Windows spelling of contract point 2.
+///
+/// The two numbers below are the shutdown codes the core reports. Windows
+/// has no SIGTERM analogue, so CTRL_BREAK is mapped to the same 130 as
+/// CTRL_C: both mean "the user asked us to stop".
+#[cfg(windows)]
+mod win {
+    use super::{SIGNALLED, Ordering};
+
+    pub const CTRL_C_EVENT: u32 = 0;
+    pub const CTRL_BREAK_EVENT: u32 = 1;
+    /// Sentinel stored in SIGNALLED; translated to 130 by shutdown_code.
+    pub const CTRL_SIGNAL: i32 = 2;
+
+    #[link(name = "kernel32")]
+    extern "system" {
+        pub fn SetConsoleCtrlHandler(
+            handler: Option<unsafe extern "system" fn(u32) -> i32>,
+            add: i32,
+        ) -> i32;
+    }
+
+    pub unsafe extern "system" fn handle_console_ctrl(event: u32) -> i32 {
+        if event == CTRL_C_EVENT || event == CTRL_BREAK_EVENT {
+            SIGNALLED.store(CTRL_SIGNAL, Ordering::SeqCst);
+            // TRUE: we handled it, so the default terminator does not run
+            // and run_cli gets to return its shutdown code (contract
+            // point 1 — run_cli always returns).
+            return 1;
+        }
+        0
+    }
+}
+
+#[cfg(windows)]
 struct SignalGuard;
 
-#[cfg(not(unix))]
+#[cfg(windows)]
 impl SignalGuard {
     fn install() -> Self {
         SIGNALLED.store(0, Ordering::SeqCst);
-        // Windows console-control handling lands with the ctrl-c validation
-        // work; on this platform the fixture covers only the rows that do
-        // not involve real signal delivery.
+        // SAFETY: registering a handler that only stores to an atomic.
+        unsafe {
+            // A process created with CREATE_NEW_PROCESS_GROUP starts with
+            // Ctrl-C *disabled* (it inherits an ignore-handler). Clearing
+            // that is what makes a delivered CTRL_C_EVENT reach us at all —
+            // and creating such a group is the only way a test harness can
+            // target one process rather than the whole console.
+            win::SetConsoleCtrlHandler(None, 0);
+            win::SetConsoleCtrlHandler(Some(win::handle_console_ctrl), 1);
+        }
+        Self
+    }
+}
+
+#[cfg(windows)]
+impl Drop for SignalGuard {
+    fn drop(&mut self) {
+        // SAFETY: removing the handler we added, scoping handling to the run.
+        unsafe {
+            win::SetConsoleCtrlHandler(Some(win::handle_console_ctrl), 0);
+        }
+    }
+}
+
+#[cfg(not(any(unix, windows)))]
+struct SignalGuard;
+
+#[cfg(not(any(unix, windows)))]
+impl SignalGuard {
+    fn install() -> Self {
+        SIGNALLED.store(0, Ordering::SeqCst);
         Self
     }
 }
@@ -126,12 +190,18 @@ impl SignalGuard {
 fn write_fd(fd: i32, bytes: &[u8]) {
     let mut written = 0;
     while written < bytes.len() {
+        let remaining = bytes.len() - written;
+        // The count parameter is size_t on POSIX but c_uint on Windows.
+        #[cfg(unix)]
+        let count = remaining;
+        #[cfg(windows)]
+        let count = remaining as libc::c_uint;
         // SAFETY: writing a subslice of a live buffer to a raw fd.
         let n = unsafe {
             libc::write(
                 fd,
                 bytes[written..].as_ptr() as *const libc::c_void,
-                bytes.len() - written,
+                count,
             )
         };
         if n <= 0 {
@@ -143,11 +213,20 @@ fn write_fd(fd: i32, bytes: &[u8]) {
 
 fn shutdown_code(sig: i32) -> i32 {
     // Graceful shutdown lives here, in the core, once — launchers only
-    // translate the code (spec rows 2-3).
+    // translate the code (spec rows 2-4).
     write_fd(2, b"fixture: graceful shutdown\n");
     // Tells the guard to leave this one at SIG_DFL, so the launcher's
-    // re-raise terminates us rather than hitting a host handler.
+    // re-raise terminates us rather than hitting a host handler. Harmless
+    // on Windows, where there is nothing to re-raise.
     SHUTDOWN_SIGNAL.store(sig, Ordering::SeqCst);
+    #[cfg(windows)]
+    {
+        // Windows reports one console event rather than distinct signals;
+        // it always means the SIGINT-shaped shutdown.
+        if sig == win::CTRL_SIGNAL {
+            return 130;
+        }
+    }
     128 + sig
 }
 

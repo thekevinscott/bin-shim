@@ -1,0 +1,10 @@
+[package]
+name = "bin-shim-fixture-ctrl-event"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "ctrl-event"
+path = "src/main.rs"
