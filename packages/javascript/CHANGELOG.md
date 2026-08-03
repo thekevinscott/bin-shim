@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-08-03
+
+Identical in content to 0.1.4 — see the note under that version. Prefer this
+one: it is the version whose number reflects what actually changed.
+
 ### Added
 
 - **In-process strategy** alongside spawn, for native CLIs exposed to Node
@@ -44,6 +49,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 The spawn strategy — `main`, `resolveBinary`, `defaultResolver`,
 `defaultSpawner` — is untouched.
+
+## [0.1.4] - 2026-08-03
+
+Everything listed under 0.2.0 above, published under a patch number by
+mistake. The release pipeline had been failing since the monorepo
+restructure, and the `release: minor` marker was attached to a run that
+died before tagging; by the time publishing was fixed, only a patch bump
+remained in scope.
+
+The two versions are the same code. 0.1.4 stays on npm because published
+versions are permanent, but 0.2.0 supersedes it and is the version to
+depend on — a patch number badly understates a release that adds a whole
+second strategy.
 
 ## [0.1.3] - 2026-05-13
 

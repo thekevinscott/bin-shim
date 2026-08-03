@@ -4,10 +4,21 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      release_packages:
+        description: >
+          Packages to release manually, bypassing change detection.
+          Comma-separated list of name[@<bump|version>] entries,
+          e.g. `bin-shim@minor` or `bin-shim@0.2.0,py/bin-shim`.
+          Leave empty to fall back to change detection.
+        required: false
+        default: ''
 
 jobs:
   release:
     uses: thekevinscott/putitoutthere/.github/workflows/release.yml@v0
+    with:
+      release_packages: ${{ inputs.release_packages || '' }}
     permissions:
       contents: write
       id-token: write
