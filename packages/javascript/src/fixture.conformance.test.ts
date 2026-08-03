@@ -103,10 +103,21 @@ function runLauncher(optionsSource: string, opts: RunOpts = {}): Promise<RunResu
         child.kill(opts.signalWhenReady);
       }
     });
+    const limit = opts.timeoutMs ?? 20000;
     const timer = setTimeout(() => {
       child.kill('SIGKILL');
-      reject(new Error(`launcher did not exit within ${opts.timeoutMs ?? 20000}ms`));
-    }, opts.timeoutMs ?? 20000);
+      // Report what the child actually managed before hanging — without
+      // this a stuck re-raise and a signal that never arrived look
+      // identical, and the difference is the whole diagnosis.
+      reject(
+        new Error(
+          `launcher did not exit within ${limit}ms\n` +
+            `  signal sent: ${signalled}\n` +
+            `  stdout: ${JSON.stringify(stdout.slice(0, 200))}\n` +
+            `  stderr: ${JSON.stringify(stderr.slice(0, 400))}`,
+        ),
+      );
+    }, limit);
     child.once('exit', (code, signal) => {
       clearTimeout(timer);
       resolve({
@@ -148,6 +159,7 @@ describeFixture('fixture tier: row 2 — SIGINT delivered mid-run', () => {
       expect(result.signal).toBe('SIGINT');
       expect(result.code).toBeNull();
     },
+    30000,
   );
 });
 
@@ -163,6 +175,7 @@ describeFixture('fixture tier: row 3 — SIGTERM delivered mid-run', () => {
       expect(result.signal).toBe('SIGTERM');
       expect(result.code).toBeNull();
     },
+    30000,
   );
 });
 

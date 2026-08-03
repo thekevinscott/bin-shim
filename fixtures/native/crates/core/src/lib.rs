@@ -23,24 +23,36 @@ use std::time::{Duration, Instant};
 /// A plain atomic is the only thing a POSIX signal handler may safely touch.
 static SIGNALLED: AtomicI32 = AtomicI32::new(0);
 
+/// The signal we shut down for, so the guard knows to leave it at `SIG_DFL`
+/// rather than handing it back to the host. See `SignalGuard`'s docs.
+static SHUTDOWN_SIGNAL: AtomicI32 = AtomicI32::new(0);
+
 #[cfg(unix)]
 extern "C" fn handle_signal(sig: i32) {
     SIGNALLED.store(sig, Ordering::SeqCst);
 }
 
-/// Guard installing our handlers on construction and restoring the previous
-/// ones on drop, so handling really is scoped to "the duration of the run".
+/// Guard installing our handlers on construction and, on drop, putting each
+/// signal back the way contract point 4 requires.
 ///
-/// This uses `sigaction`, not `signal`, and that distinction is load-bearing
-/// rather than stylistic. Both Node and CPython install their handlers with
-/// `sigaction` and meaningful `sa_flags` (`SA_SIGINFO` among them). Saving
-/// such a handler with `signal()` yields only its `sa_handler` field, and
-/// restoring it that way reinstalls it as a plain one-argument handler with
-/// the flags dropped — the host's handler is then silently broken, and the
-/// signal the launcher re-raises afterwards is swallowed instead of killing
-/// the process. A core that gets this wrong hangs its launcher; keeping the
-/// full `sigaction` round trip is what makes the fixture a well-behaved
-/// citizen of the host runtime.
+/// Two things matter here, both learned the hard way.
+///
+/// **Save and restore with `sigaction`, never `signal`.** Node and CPython
+/// install their handlers with `sigaction` and meaningful `sa_flags`
+/// (`SA_SIGINFO` among them). Saving such a handler with `signal()` yields
+/// only its `sa_handler` field, and restoring it that way reinstalls it as a
+/// plain one-argument handler with the flags dropped — the host's handler is
+/// then silently broken.
+///
+/// **Leave the shutdown signal at `SIG_DFL`.** For the signal we actually
+/// shut down for, handing the host's handler back is not enough: the
+/// launcher is about to re-raise that signal expecting to die, and a host
+/// handler that merely notes it and returns swallows the re-raise, hanging
+/// the launcher. Whether a given host's handler terminates on re-raise is
+/// its own business and varies by platform, so the fixture does not depend
+/// on it. `SIG_DFL` is the other option contract point 4 permits, and it is
+/// the one a core should prefer: it makes the outcome the kernel's decision
+/// rather than the host runtime's.
 #[cfg(unix)]
 struct SignalGuard {
     previous: Vec<(i32, libc::sigaction)>,
@@ -53,6 +65,7 @@ const HANDLED_SIGNALS: [i32; 2] = [libc::SIGINT, libc::SIGTERM];
 impl SignalGuard {
     fn install() -> Self {
         SIGNALLED.store(0, Ordering::SeqCst);
+        SHUTDOWN_SIGNAL.store(0, Ordering::SeqCst);
         let mut previous = Vec::with_capacity(HANDLED_SIGNALS.len());
         // SAFETY: installing an extern "C" handler that only stores to an
         // atomic — the one operation guaranteed async-signal-safe — and
@@ -60,7 +73,7 @@ impl SignalGuard {
         unsafe {
             for sig in HANDLED_SIGNALS {
                 let mut action: libc::sigaction = std::mem::zeroed();
-                action.sa_sigaction = handle_signal as usize;
+                action.sa_sigaction = handle_signal as *const () as usize;
                 libc::sigemptyset(&mut action.sa_mask);
                 action.sa_flags = libc::SA_RESTART;
                 let mut old: libc::sigaction = std::mem::zeroed();
@@ -75,11 +88,20 @@ impl SignalGuard {
 #[cfg(unix)]
 impl Drop for SignalGuard {
     fn drop(&mut self) {
+        let shutdown = SHUTDOWN_SIGNAL.load(Ordering::SeqCst);
         // SAFETY: restoring dispositions captured by sigaction() itself,
-        // flags and all.
+        // flags and all — except the shutdown signal, which is left at
+        // SIG_DFL so the launcher's re-raise reliably terminates us.
         unsafe {
             for (sig, old) in &self.previous {
-                libc::sigaction(*sig, old, std::ptr::null_mut());
+                if *sig == shutdown {
+                    let mut default: libc::sigaction = std::mem::zeroed();
+                    default.sa_sigaction = libc::SIG_DFL;
+                    libc::sigemptyset(&mut default.sa_mask);
+                    libc::sigaction(*sig, &default, std::ptr::null_mut());
+                } else {
+                    libc::sigaction(*sig, old, std::ptr::null_mut());
+                }
             }
         }
     }
@@ -123,6 +145,9 @@ fn shutdown_code(sig: i32) -> i32 {
     // Graceful shutdown lives here, in the core, once — launchers only
     // translate the code (spec rows 2-3).
     write_fd(2, b"fixture: graceful shutdown\n");
+    // Tells the guard to leave this one at SIG_DFL, so the launcher's
+    // re-raise terminates us rather than hitting a host handler.
+    SHUTDOWN_SIGNAL.store(sig, Ordering::SeqCst);
     128 + sig
 }
 
