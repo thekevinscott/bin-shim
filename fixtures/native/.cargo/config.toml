@@ -1,0 +1,17 @@
+# Python extension modules resolve their CPython symbols at load time, from
+# whichever interpreter imports them — there is no libpython to link against.
+# Linux allows undefined symbols in a shared object by default, so the pyo3
+# cdylib links there with no help; macOS does not, and the link fails with
+# "symbol(s) not found for architecture arm64" listing every Py* symbol.
+#
+# `-undefined dynamic_lookup` is the documented pyo3 answer for building an
+# extension module with plain cargo. Build tools like maturin pass these
+# flags for you; we build with cargo directly, so we pass them here.
+#
+# This also covers the napi cdylib, whose Node symbols work the same way.
+
+[target.x86_64-apple-darwin]
+rustflags = ["-C", "link-arg=-undefined", "-C", "link-arg=dynamic_lookup"]
+
+[target.aarch64-apple-darwin]
+rustflags = ["-C", "link-arg=-undefined", "-C", "link-arg=dynamic_lookup"]

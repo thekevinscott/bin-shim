@@ -43,9 +43,13 @@ jobs:
         with:
           workspaces: fixtures/native
 
+      # Scoped to the core crate: it holds every test, and building test
+      # harnesses for the two binding crates would try to link the host
+      # runtime's symbols into an executable, where the extension-module
+      # `dynamic_lookup` trick does not apply.
       - name: Fixture unit tests
         working-directory: fixtures/native
-        run: cargo test --release
+        run: cargo test --release -p bin-shim-fixture-core
 
       - name: Build and stage the fixture
         run: ./fixtures/native/build.sh
