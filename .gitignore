@@ -11,3 +11,8 @@ uv.lock
 .ruff_cache
 .coverage
 coverage.xml
+
+# Native conformance fixture build output (fixtures/native/dist is covered
+# by the `dist/` rule above). Cargo.lock is deliberately committed: the
+# fixture is a CI gate, so its dependency versions should be pinned.
+target/

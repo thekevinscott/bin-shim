@@ -1,0 +1,17 @@
+[workspace]
+resolver = "2"
+members = ["crates/core", "crates/napi", "crates/pyo3"]
+
+[workspace.package]
+version = "0.0.0"
+edition = "2021"
+publish = false
+license = "MIT"
+
+# Small and fast to build: CI builds this from scratch on every run, and the
+# fixture's job is to exercise process semantics, not to be fast at runtime.
+[profile.release]
+opt-level = 1
+debug = false
+incremental = false
+codegen-units = 16

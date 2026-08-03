@@ -1,0 +1,17 @@
+[package]
+name = "bin-shim-fixture-napi"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+license.workspace = true
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+bin-shim-fixture-core = { path = "../core" }
+napi = { version = "2", default-features = false, features = ["napi4"] }
+napi-derive = "2"
+
+[build-dependencies]
+napi-build = "2"
