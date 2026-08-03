@@ -240,6 +240,10 @@ fn encode_json_array(items: &[String]) -> String {
     out
 }
 
+/// These tests share the process-global signal state, so they must not run
+/// concurrently — `.cargo/config.toml` pins `RUST_TEST_THREADS=1` for that
+/// reason. Without it, one test's `SignalGuard::install()` can zero the flag
+/// another just set by raising a signal.
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -10,6 +10,17 @@
 #
 # This also covers the napi cdylib, whose Node symbols work the same way.
 
+# Signal dispositions and the SIGNALLED flag are process-global — they have
+# to be, since that is all a signal handler may touch. libtest's default
+# parallelism therefore lets one test's SignalGuard::install() zero the flag
+# another test just set by raising a signal, which showed up as
+# sleep_returns_the_shutdown_code_when_signalled failing on macOS while
+# passing on Linux (it was always a race; only the scheduling differed).
+# Run this crate's tests serially. Set here rather than as a CI flag so a
+# local `cargo test` behaves the same way.
+[env]
+RUST_TEST_THREADS = "1"
+
 [target.x86_64-apple-darwin]
 rustflags = ["-C", "link-arg=-undefined", "-C", "link-arg=dynamic_lookup"]
 
