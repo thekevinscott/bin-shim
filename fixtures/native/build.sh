@@ -15,6 +15,13 @@ set -euo pipefail
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 dist="$here/dist"
 
+# cd rather than relying on --manifest-path: cargo discovers .cargo/config.toml
+# by walking up from the *current directory*, not from the manifest. Our config
+# there carries the macOS `-undefined dynamic_lookup` flags the extension
+# modules need, and running this script from the repo root would silently skip
+# them — which fails the link on macOS and nowhere else.
+cd "$here"
+
 cargo build --release --manifest-path "$here/Cargo.toml"
 
 target="$here/target/release"
