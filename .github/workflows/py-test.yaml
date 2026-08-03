@@ -1,0 +1,82 @@
+name: Python Tests
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'packages/python/**'
+      - 'spec/**'
+      - '.github/workflows/py-test.yaml'
+  pull_request:
+    paths:
+      - 'packages/python/**'
+      - 'spec/**'
+      - '.github/workflows/py-test.yaml'
+
+permissions: { contents: read }
+
+jobs:
+  # Process semantics are OS-sensitive (signal re-raise on POSIX, plain exit
+  # codes on Windows), so unlike a pure-library package the full suite runs
+  # on every OS.
+  test:
+    name: Test
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Install dependencies
+        working-directory: packages/python
+        run: uv sync
+
+      - name: Run tests
+        working-directory: packages/python
+        run: uv run pytest -x -v
+
+  # Unit tests are colocated as src/bin_shim/**/*_test.py. Everything under
+  # tests/ is integration BY LOCATION and never feeds this gate. The unit
+  # suite must be 100% covered including branches (--cov-branch), matching
+  # the JS package's vitest thresholds.
+  coverage:
+    name: Unit coverage (100%, incl. branches)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Install dependencies
+        working-directory: packages/python
+        run: uv sync
+
+      - name: Unit coverage
+        working-directory: packages/python
+        run: uv run pytest src/bin_shim --cov=bin_shim --cov-branch --cov-fail-under=100
+
+  # The package declares requires-python ">= 3.10". The test job above runs
+  # on uv's default (latest) interpreter; this one proves the floor claim by
+  # running the full suite on every supported minor below it.
+  floor:
+    name: Test (Python ${{ matrix.python }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ['3.10', '3.11', '3.12']
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Run tests
+        working-directory: packages/python
+        run: uv run --python '${{ matrix.python }}' pytest -x -v

@@ -1,21 +1,38 @@
-name: CI
+name: JS Tests
+
 on:
+  push:
+    branches: [main]
+    paths:
+      - 'packages/javascript/**'
+      - 'pnpm-lock.yaml'
+      - 'pnpm-workspace.yaml'
+      - '.github/workflows/js-test.yaml'
   pull_request:
+    paths:
+      - 'packages/javascript/**'
+      - 'pnpm-lock.yaml'
+      - 'pnpm-workspace.yaml'
+      - '.github/workflows/js-test.yaml'
+
 permissions: { contents: read }
+
 jobs:
   typecheck:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
-        with: { version: 9 }
+        with: { version: 10 }
       - uses: actions/setup-node@v4
         with:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm run typecheck
+        working-directory: packages/javascript
       - run: pnpm run typecheck:tests
+        working-directory: packages/javascript
   test:
     strategy:
       fail-fast: false
@@ -26,11 +43,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
-        with: { version: 9 }
+        with: { version: 10 }
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node-version }}
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm run build
+        working-directory: packages/javascript
       - run: pnpm run coverage
+        working-directory: packages/javascript

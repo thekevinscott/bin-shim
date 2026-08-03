@@ -1,0 +1,90 @@
+[build-system]
+requires = ["setuptools>=68.0", "setuptools-scm>=8.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "bin-shim"
+dynamic = ["version"]
+description = "Runtime shim for native CLIs exposed in-process as run_cli(argv) -> int"
+requires-python = ">= 3.10"
+license = "MIT"
+readme = "README.md"
+authors = [{ name = "Kevin Scott" }]
+dependencies = []
+
+[project.urls]
+Homepage = "https://github.com/thekevinscott/bin-shim"
+Repository = "https://github.com/thekevinscott/bin-shim"
+Documentation = "https://github.com/thekevinscott/bin-shim/tree/main/packages/python"
+Issues = "https://github.com/thekevinscott/bin-shim/issues"
+
+[tool.pytest.ini_options]
+log_format = "%(asctime)s %(levelname)s %(message)s"
+log_date_format = "%H:%M:%S"
+log_level = "INFO"
+
+[tool.coverage.run]
+# Unit tests are colocated inside the package (src/bin_shim/**/*_test.py), so
+# `--cov=bin_shim` would otherwise measure the test files themselves. Omit
+# them so the gate reflects coverage of the *source* only — mirrors the JS
+# vitest config excluding `src/**/*.test.ts`.
+omit = ["*_test.py"]
+
+[tool.pytest-watcher]
+now = true
+clear = true
+delay = 0.0
+runner = "pytest"
+runner_args = []
+patterns = ["*.py"]
+ignore_patterns = []
+
+# ---------------------------------------------------------------------------
+# ty — Astral's static type checker. Configured to be as strict as possible
+# and enforced by .github/workflows/py-typecheck.yaml. The version is pinned
+# in [dependency-groups].dev below so the gate is deterministic across runs.
+# ---------------------------------------------------------------------------
+[tool.ty.environment]
+python-version = "3.10"   # matches requires-python = ">= 3.10"
+python-platform = "all"   # check every platform, not just CI's linux
+
+[tool.ty.src]
+# setup.py is a setuptools build shim (it imports setuptools, which isn't in
+# the type-checking environment), not typed application code.
+exclude = ["setup.py"]
+
+[tool.ty.terminal]
+error-on-warning = true   # any rule left at "warn" fails the build
+
+[tool.ty.rules]
+# error-on-warning (above) promotes every "warn"-default rule to a build
+# failure. It cannot reach rules that default to "ignore", so each STABLE
+# ignore-default rule is raised to "error" by hand below (reconciled against
+# `ty explain rule` for the pinned 0.0.44).
+division-by-zero = "error"
+possibly-missing-attribute = "error"
+possibly-missing-import = "error"
+possibly-unresolved-reference = "error"
+unsupported-dynamic-base = "error"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.2",
+    "pytest-cov>=6.0.0",
+    "pytest-describe>=3.1.0",
+    "pytest-watcher>=0.4.3",
+    "ty==0.0.44",
+    # Pinned exactly (like ty) so the lint gate is deterministic across runs.
+    "ruff==0.15.8",
+]
+
+[tool.setuptools]
+packages = { find = { where = ["src"] } }
+package-dir = {"" = "src"}
+
+[tool.setuptools_scm]
+# Match our `py/bin-shim-v{version}` tag prefix. piot overrides this at
+# release time via SETUPTOOLS_SCM_PRETEND_VERSION; the regex matters only
+# for local dev / CI test paths that don't run through piot.
+tag_regex = '^py/bin-shim-v(?P<version>.+)$'
+fallback_version = "0.0.0+local"

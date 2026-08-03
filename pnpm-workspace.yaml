@@ -1,0 +1,8 @@
+packages:
+  - packages/**
+
+# esbuild (vitest's bundler) ships a postinstall that fetches its native
+# binary. Approve it so `pnpm install` doesn't skip the build under pnpm 10's
+# script-approval policy. CI pins pnpm 10 to match this field's semantics.
+onlyBuiltDependencies:
+  - esbuild
