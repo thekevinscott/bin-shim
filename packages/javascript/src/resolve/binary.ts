@@ -1,47 +1,8 @@
 import { defaultResolver } from '../defaults/index.js';
 import type { ResolveOpts } from '../types.js';
+import { buildPackageName } from './packageName.js';
 
 const DEFAULT_TEMPLATE = '@{scope}/{platform}-{arch}';
-
-function buildPlatformPkg(
-  opts: ResolveOpts,
-  platform: NodeJS.Platform,
-  arch: NodeJS.Architecture,
-): string {
-  const { scope, binaryName, platformPackage, packageName, triples } = opts;
-  if (packageName) {
-    return packageName({ platform, arch, scope, binaryName });
-  }
-  const template = platformPackage ?? DEFAULT_TEMPLATE;
-  return template.replace(
-    /\{(scope|platform|arch|triple)\}/g,
-    (_match, key: 'scope' | 'platform' | 'arch' | 'triple') => {
-      switch (key) {
-        case 'scope':
-          if (!scope) {
-            throw new Error(
-              `bin-shim: platformPackage template "${template}" uses {scope} but no scope was provided.`,
-            );
-          }
-          return scope;
-        case 'platform':
-          return platform;
-        case 'arch':
-          return arch;
-        case 'triple': {
-          const triple = triples?.[`${platform}-${arch}`];
-          if (!triple) {
-            throw new Error(
-              `bin-shim: platformPackage template "${template}" uses {triple} but no triple mapping was provided for ${platform}-${arch}. ` +
-                `fix: pass a \`triples\` map covering this platform/arch pair.`,
-            );
-          }
-          return triple;
-        }
-      }
-    },
-  );
-}
 
 export function resolveBinary(opts: ResolveOpts): string {
   const {
@@ -52,7 +13,7 @@ export function resolveBinary(opts: ResolveOpts): string {
     resolver = defaultResolver(from),
   } = opts;
   const ext = platform === 'win32' ? '.exe' : '';
-  const platformPkg = buildPlatformPkg(opts, platform, arch);
+  const platformPkg = buildPackageName(opts, platform, arch, DEFAULT_TEMPLATE);
   try {
     return resolver(`${platformPkg}/bin/${binaryName}${ext}`);
   } catch (cause) {

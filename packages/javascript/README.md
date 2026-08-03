@@ -1,15 +1,32 @@
 # bin-shim
 
-Runtime shim for distributing native binaries as npm packages via
+Runtime shim for distributing native CLIs as npm packages via
 `optionalDependencies`. The pattern esbuild popularized: a top-level package
-with no real code that delegates to a per-platform package containing the
-prebuilt binary for the host. `bin-shim` is the wrapper your top-level
-package's `bin/foo.js` delegates to.
+with no real code that delegates to a per-platform package for the host.
+`bin-shim` is the wrapper your top-level package's `bin/foo.js` delegates to.
 
-It handles platform detection, path resolution, spawning the binary with
-inherited stdio, and exit-code propagation. It does not generate the
-per-platform packages or write the `optionalDependencies` block — those
-are publishing concerns, not runtime concerns.
+It does not generate the per-platform packages or write the
+`optionalDependencies` block — those are publishing concerns, not runtime
+concerns.
+
+## Two strategies
+
+| | `main` (spawn) | `mainInProcess` (in-process) |
+|---|---|---|
+| Per-platform package holds | a prebuilt **binary** | a **native addon** (napi) |
+| The CLI runs | as a child process | inside this Node process |
+| Process semantics | the OS provides them — the child *is* the CLI | `bin-shim` translates `runCli`'s return code |
+| Default package name | `@{scope}/{platform}-{arch}` | `@{scope}/lib-{platform}-{arch}` |
+
+Reach for **spawn** when you ship a standalone executable — it's the simpler
+pattern and the original one. Reach for **in-process** when your CLI is a
+Rust (or C, Zig, …) core already exposed to Node through napi bindings: there
+is one copy of the core, no process launch, and no binary to bundle
+alongside the addon.
+
+Both are documented below; the in-process route additionally implements the
+[process-semantics conformance spec](https://github.com/thekevinscott/bin-shim/blob/main/spec/conformance.md),
+shared with the Python sibling package.
 
 ## Install
 
@@ -168,11 +185,116 @@ Spawns `cmd` with `stdio: 'inherit'`, resolves with the child's exit code
 (or `1` if the child was terminated by a signal), rejects if `spawn`
 itself errors.
 
+## The in-process strategy
+
+Your CLI is compiled once as a library and exposed to Node through napi
+bindings as `runCli(argv) -> number`. There is no binary to spawn: the
+per-platform package is the addon itself.
+
+```js
+#!/usr/bin/env node
+import { mainInProcess } from 'bin-shim';
+
+mainInProcess({ scope: 'yourname', binaryName: 'foo', from: import.meta.url })
+  .then((code) => process.exit(code))
+  .catch((err) => {
+    process.stderr.write(`${err.message}\n`);
+    process.exit(1);
+  });
+```
+
+with `optionalDependencies` naming the addon packages:
+
+```json
+{
+  "optionalDependencies": {
+    "@yourname/lib-linux-x64": "1.0.0",
+    "@yourname/lib-darwin-arm64": "1.0.0",
+    "@yourname/lib-win32-x64": "1.0.0"
+  }
+}
+```
+
+### `mainInProcess(opts): Promise<number>`
+
+Flushes host stdio, loads the addon, calls `runCli(argv)`, and applies the
+process-semantics contract to the returned code. As with `main`, the caller
+owns exiting.
+
+```ts
+mainInProcess({
+  scope: 'yourname',            // as with main
+  binaryName: 'foo',            // used in error messages
+  from: import.meta.url,        // see "Why `from` is required"
+  argv: process.argv.slice(2),  // optional; default
+  entryPoint: 'runCli',         // optional; named export to call
+  runCli: (argv) => 0,          // optional; skips resolution entirely
+  load: customLoader,           // optional; defaults to defaultLoader(from)
+  platform: process.platform,   // optional; drives the semantics branch
+  raiseSignal: customRaiser,    // optional; defaults to defaultSignalRaiser
+  flush: customFlush,           // optional; defaults to flushStdio
+  platformPackage: '@{scope}/lib-{platform}-{arch}', // optional; default shown
+});
+```
+
+The naming options (`platformPackage`, `packageName`, `triples`) behave
+exactly as they do for the spawn strategy — only the default template
+differs.
+
+**Exit semantics.** Ordinary codes are returned for you to exit with. On
+POSIX, `130` and `143` — the `128 + N` codes the core returns after handling
+SIGINT/SIGTERM itself — cause `bin-shim` to restore the default handler and
+re-raise that signal, so the parent shell observes genuine signal death and
+job control behaves as it would for a spawned binary. On Windows there is no
+re-raise; codes pass through. **`mainInProcess` therefore does not always
+return** — for those two codes the process dies inside it.
+
+### `resolveRunCli(opts): RunCli`
+
+Loads the addon package for the host and returns its `entryPoint` export, or
+throws with an install hint. The in-process sibling of `resolveBinary`.
+
+### `applyExitSemantics(code, opts?): number`
+
+The translation step alone (`{ platform, raiseSignal }`). Exported for
+consumers doing their own invocation.
+
+### `flushStdio(streams?): Promise<void>`
+
+Drains `process.stdout`/`process.stderr`. The addon writes to file
+descriptors 1/2 directly, so pending Node buffers must go out first or
+output interleaves out of order.
+
+### `defaultLoader(from): Loader`
+
+Returns `createRequire(from)` — the loading counterpart to
+`defaultResolver`'s `.resolve`.
+
+### `defaultSignalRaiser(signal): never`
+
+Removes listeners for `signal`, then `process.kill(process.pid, signal)`.
+
+### The `runCli` contract
+
+What `bin-shim` requires of the native side:
+
+1. `runCli(argv) -> number` **always returns**; it never terminates the
+   process.
+2. It registers its own SIGINT/SIGTERM (POSIX) / ctrl-c (Windows) handling
+   for the duration of the run; on receipt it performs graceful shutdown and
+   returns 130/143. Shutdown logic lives in the core, once — launchers only
+   translate.
+3. It writes only to file descriptors 1/2; it never touches host-language
+   stdio objects.
+
 ### Types
 
 ```ts
 type Resolver = (id: string) => string;
 type Spawner = (cmd: string, args: readonly string[]) => Promise<number>;
+type Loader = (id: string) => unknown;
+type RunCli = (argv: readonly string[]) => number;
+type SignalRaiser = (signal: 'SIGINT' | 'SIGTERM') => never;
 
 type Triples = Partial<Record<string, string>>;
 
@@ -185,16 +307,19 @@ interface PackageNameContext {
 
 type PackageNameFn = (ctx: PackageNameContext) => string;
 
-interface ResolveOpts {
+interface PackageNamingOpts {
   scope?: string;
   binaryName: string;
+  platformPackage?: string;
+  packageName?: PackageNameFn;
+  triples?: Triples;
+}
+
+interface ResolveOpts extends PackageNamingOpts {
   from: string | URL;
   platform?: NodeJS.Platform;
   arch?: NodeJS.Architecture;
   resolver?: Resolver;
-  platformPackage?: string;
-  packageName?: PackageNameFn;
-  triples?: Triples;
 }
 
 interface MainOpts extends ResolveOpts {
@@ -202,22 +327,49 @@ interface MainOpts extends ResolveOpts {
   resolveBin?: () => string;
   spawn?: Spawner;
 }
+
+interface ResolveAddonOpts extends PackageNamingOpts {
+  from: string | URL;
+  platform?: NodeJS.Platform;
+  arch?: NodeJS.Architecture;
+  entryPoint?: string;
+  load?: Loader;
+}
+
+interface ExitSemanticsOpts {
+  platform?: NodeJS.Platform;
+  raiseSignal?: SignalRaiser;
+}
+
+interface InProcessOpts extends ResolveAddonOpts, ExitSemanticsOpts {
+  argv?: readonly string[];
+  runCli?: RunCli;
+  flush?: () => Promise<void>;
+}
 ```
+
+The exported constants `SIGINT_EXIT_CODE` (130) and `SIGTERM_EXIT_CODE`
+(143) name the two shutdown codes.
 
 ## What `bin-shim` does not do
 
 - **Generate per-platform packages.** That's your publishing tool's job.
 - **Write the `optionalDependencies` block.** Same.
-- **Forward signals to the child.** A SIGTERM to the wrapper process
-  exits the wrapper but does not propagate to the spawned binary; the
-  child is reparented to PID 1 and finishes naturally. If your binary
-  needs cooperative termination, wrap it yourself or supply a custom
-  `spawn`.
+- **Forward signals to the child (spawn strategy).** A SIGTERM to the
+  wrapper process exits the wrapper but does not propagate to the spawned
+  binary; the child is reparented to PID 1 and finishes naturally. If your
+  binary needs cooperative termination, wrap it yourself or supply a custom
+  `spawn`. This does not apply to the in-process strategy, where there is no
+  child — signals go straight to the one process, and the core's own handler
+  owns shutdown.
+- **Install signal handlers (in-process strategy).** Per the `runCli`
+  contract the core registers its own for the duration of the run;
+  `bin-shim` only translates the code it returns.
 - **Handle `--no-optional`.** A consumer who runs
-  `npm install --no-optional foo` skips all platform packages. `main`
-  rejects with the documented error. Recommend a language-native install
-  path (`cargo install`, `brew install`, direct GitHub release download)
-  as the alternative.
+  `npm install --no-optional foo` skips all platform packages. `main` and
+  `mainInProcess` reject with the documented error. Recommend a
+  language-native install path (`cargo install`, `brew install`, direct
+  GitHub release download) as the alternative.
 - **Yarn Berry PnP zip-path workaround.** Set `preferUnplugged: true` on
   every platform package.
 - **`*_BINARY_PATH` env var escape hatch.**
