@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- **`binaryDir`** on `resolveBinary`/`main`, naming the directory that holds
+  the binary inside the platform package. Defaults to `bin`, so existing
+  consumers are unaffected; `''` resolves at the package root, which is where
+  putitoutthere's `bundled-cli` recipe stages it. Any relative path works,
+  and `.exe` is still appended on Windows.
+
 ## [0.2.0] - 2026-08-03
 
 Identical in content to 0.1.4 — see the note under that version. Prefer this

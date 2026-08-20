@@ -238,4 +238,68 @@ describe('resolveBinary', () => {
       expect(resolver).toHaveBeenCalledWith('@from/fn/bin/foo');
     });
   });
+
+  describe('binaryDir', () => {
+    it('resolves at the package root when empty', () => {
+      const resolver = vi.fn((id: string) => id);
+      const path = resolveBinary({
+        scope: 'foo',
+        binaryName: 'foo',
+        from: import.meta.url,
+        platform: 'linux',
+        arch: 'x64',
+        binaryDir: '',
+        resolver,
+      });
+      expect(resolver).toHaveBeenCalledWith('@foo/linux-x64/foo');
+      expect(path).toBe('@foo/linux-x64/foo');
+    });
+
+    it('appends .exe at the package root on win32', () => {
+      const resolver = vi.fn((id: string) => id);
+      resolveBinary({
+        scope: 'foo',
+        binaryName: 'foo',
+        from: import.meta.url,
+        platform: 'win32',
+        arch: 'x64',
+        binaryDir: '',
+        resolver,
+      });
+      expect(resolver).toHaveBeenCalledWith('@foo/win32-x64/foo.exe');
+    });
+
+    it('accepts a nested directory', () => {
+      const resolver = vi.fn((id: string) => id);
+      resolveBinary({
+        scope: 'foo',
+        binaryName: 'foo',
+        from: import.meta.url,
+        platform: 'linux',
+        arch: 'x64',
+        binaryDir: 'libexec/tools',
+        resolver,
+      });
+      expect(resolver).toHaveBeenCalledWith(
+        '@foo/linux-x64/libexec/tools/foo',
+      );
+    });
+
+    it('names the platform package, not the subpath, when resolution fails', () => {
+      const resolver = vi.fn(() => {
+        throw new Error('MODULE_NOT_FOUND');
+      });
+      expect(() =>
+        resolveBinary({
+          scope: 'foo',
+          binaryName: 'foo',
+          from: import.meta.url,
+          platform: 'linux',
+          arch: 'x64',
+          binaryDir: '',
+          resolver,
+        }),
+      ).toThrow(/optional dependency @foo\/linux-x64 to provide one/);
+    });
+  });
 });
