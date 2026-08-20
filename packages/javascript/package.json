@@ -15,6 +15,7 @@
   },
   "files": ["dist/"],
   "engines": { "node": ">=20.20.0" },
+  "packageManager": "pnpm@10.34.5",
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "pretest": "pnpm run build",
