@@ -12,7 +12,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, chmodSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, sep } from 'node:path';
 
-const LIB = new URL('../dist/index.js', import.meta.url).href;
+const LIB = new URL('../../dist/index.js', import.meta.url).href;
 
 interface RunResult {
   code: number | null;

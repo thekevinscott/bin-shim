@@ -89,7 +89,7 @@ least one listed test executes it at the required tier.
 
 ### Python (`packages/python`, in-process strategy) — fake tier
 
-Suite: `tests/conformance_test.py` (subprocess-based; POSIX rows assert
+Suite: `tests/integration/conformance_test.py` (subprocess-based; POSIX rows assert
 `returncode == -N`, i.e. `WIFSIGNALED`). Launcher-internal steps are
 additionally pinned by the colocated unit suites (`src/bin_shim/*_test.py`).
 
@@ -106,7 +106,7 @@ additionally pinned by the colocated unit suites (`src/bin_shim/*_test.py`).
 
 ### JavaScript (`packages/javascript`, in-process strategy) — fake tier
 
-Suite: `src/conformance.test.ts` (subprocess-based; the launcher is written
+Suite: `tests/integration/conformance.test.ts` (subprocess-based; the launcher is written
 to a real file rather than run via `node -e`, so `process.argv.slice(2)` has
 production semantics. POSIX rows assert `signal === 'SIG…'` with a null exit
 code, i.e. `WIFSIGNALED`). Launcher-internal steps are additionally pinned by
@@ -130,13 +130,13 @@ native process — so rows 2–4 hold by construction rather than by translation
 
 | Row | Test |
 |-----|------|
-| 1 | `src/cli/main.test.ts`, `src/defaults/spawner.test.ts`, `src/integration.test.ts` |
+| 1 | `src/cli/main.test.ts`, `src/defaults/spawner.test.ts`, `tests/integration/integration.test.ts` |
 | 2–8 | N/A — owned by the OS, not by the launcher |
 
 ### Fixture tier (both languages, real `fixtures/native` crate)
 
-Suites: `packages/javascript/src/fixture.conformance.test.ts` and
-`packages/python/tests/fixture_conformance_test.py`. Rows 2–3 here send a
+Suites: `packages/javascript/tests/integration/fixture.conformance.test.ts` and
+`packages/python/tests/integration/fixture_conformance_test.py`. Rows 2–3 here send a
 **real signal to a running process** and wait for the fixture's readiness
 line first, so the handlers are provably installed before delivery — these
 are the rows the fake tier cannot state honestly. POSIX only; run by

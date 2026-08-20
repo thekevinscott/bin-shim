@@ -19,9 +19,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const LIB = new URL('../dist/index.js', import.meta.url).href;
+const LIB = new URL('../../dist/index.js', import.meta.url).href;
 const FIXTURE = fileURLToPath(
-  new URL('../../../fixtures/native/dist/fixture.node', import.meta.url),
+  new URL('../../../../fixtures/native/dist/fixture.node', import.meta.url),
 );
 
 const hasFixture = existsSync(FIXTURE);
@@ -230,7 +230,7 @@ describeFixture('fixture tier: row 8 — prompt exit', () => {
  * event there, which is also what keeps the event off the test runner.
  */
 const CTRL_EVENT = fileURLToPath(
-  new URL('../../../fixtures/native/dist/ctrl-event.exe', import.meta.url),
+  new URL('../../../../fixtures/native/dist/ctrl-event.exe', import.meta.url),
 );
 const hasCtrlEvent = process.platform === 'win32' && existsSync(CTRL_EVENT);
 const describeWindowsCtrl = hasCtrlEvent ? describe : describe.skip;
