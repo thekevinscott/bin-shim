@@ -26,6 +26,9 @@ export interface ResolveOpts {
   platformPackage?: string;
   packageName?: PackageNameFn;
   triples?: Triples;
+  /** Directory holding the binary inside the platform package. Defaults to
+   *  `bin`; `''` means the package root. */
+  binaryDir?: string;
 }
 
 export interface MainOpts extends ResolveOpts {

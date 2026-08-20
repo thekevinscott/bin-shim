@@ -68,7 +68,7 @@ function runNodeFile(file: string, argv: string[] = []): Promise<RunResult> {
  * Build a fake consumer layout in a temp dir:
  *   <root>/
  *     bin/foo.js
- *     node_modules/@scope/<platform>-<arch>/bin/(foo|foo.exe)
+ *     node_modules/@scope/<platform>-<arch>/<binaryDir>/(foo|foo.exe)
  *     node_modules/@scope/<platform>-<arch>/package.json
  */
 function makeFakeConsumer(opts: {
@@ -77,6 +77,7 @@ function makeFakeConsumer(opts: {
   platform: NodeJS.Platform;
   arch: NodeJS.Architecture;
   binaryContent: string;
+  binaryDir?: string;
 }) {
   const root = mkdtempSync(join(tmpdir(), 'bin-shim-it-'));
   mkdirSync(join(root, 'bin'), { recursive: true });
@@ -86,7 +87,8 @@ function makeFakeConsumer(opts: {
     `@${opts.scope}`,
     `${opts.platform}-${opts.arch}`,
   );
-  mkdirSync(join(pkgDir, 'bin'), { recursive: true });
+  const binaryDir = opts.binaryDir ?? 'bin';
+  mkdirSync(binaryDir ? join(pkgDir, binaryDir) : pkgDir, { recursive: true });
   writeFileSync(
     join(pkgDir, 'package.json'),
     JSON.stringify({
@@ -97,7 +99,7 @@ function makeFakeConsumer(opts: {
     }),
   );
   const ext = opts.platform === 'win32' ? '.exe' : '';
-  const binaryPath = join(pkgDir, 'bin', `${opts.binaryName}${ext}`);
+  const binaryPath = join(pkgDir, binaryDir, `${opts.binaryName}${ext}`);
   writeFileSync(binaryPath, opts.binaryContent);
   chmodSync(binaryPath, 0o755);
   const shim = join(root, 'bin', 'foo.js');
@@ -105,7 +107,7 @@ function makeFakeConsumer(opts: {
     shim,
     `#!/usr/bin/env node
 import { main } from '${LIB}';
-main({ scope: '${opts.scope}', binaryName: '${opts.binaryName}', from: import.meta.url })
+main({ scope: '${opts.scope}', binaryName: '${opts.binaryName}', from: import.meta.url, binaryDir: '${binaryDir}' })
   .then((code) => process.exit(code))
   .catch((err) => {
     process.stderr.write(\`\${err.message}\\n\`);
@@ -130,6 +132,23 @@ describe('integration: end-to-end via real consumer layout', () => {
       const result = await runNodeFile(shim);
       expect(result.code).toBe(0);
       expect(result.signal).toBeNull();
+    },
+  );
+
+  test.skipIf(process.platform === 'win32')(
+    'wrapper resolves a binary at the platform package root',
+    async () => {
+      const { shim, binaryPath } = makeFakeConsumer({
+        scope: 'bsi',
+        binaryName: 'foo',
+        platform: process.platform,
+        arch: process.arch,
+        binaryDir: '',
+        binaryContent: `#!/usr/bin/env node\nprocess.exit(7);\n`,
+      });
+      expect(binaryPath).not.toContain('/bin/');
+      const result = await runNodeFile(shim);
+      expect(result.code).toBe(7);
     },
   );
 

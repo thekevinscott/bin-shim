@@ -105,6 +105,67 @@ describe('resolveBinary', () => {
     expect(path).toContain(`@foo/${process.platform}-${process.arch}/bin/foo`);
   });
 
+  describe('binaryDir', () => {
+    it('resolves at the platform package root when empty', () => {
+      const resolver = vi.fn((id: string) => id);
+      const path = resolveBinary({
+        scope: 'foo',
+        binaryName: 'foo',
+        from: import.meta.url,
+        platform: 'linux',
+        arch: 'x64',
+        binaryDir: '',
+        resolver,
+      });
+      expect(resolver).toHaveBeenCalledWith('@foo/linux-x64/foo');
+      expect(path).toBe('@foo/linux-x64/foo');
+    });
+
+    it('still appends .exe at the root on win32', () => {
+      const resolver = vi.fn((id: string) => id);
+      resolveBinary({
+        scope: 'foo',
+        binaryName: 'foo',
+        from: import.meta.url,
+        platform: 'win32',
+        arch: 'x64',
+        binaryDir: '',
+        resolver,
+      });
+      expect(resolver).toHaveBeenCalledWith('@foo/win32-x64/foo.exe');
+    });
+
+    it('accepts a nested directory', () => {
+      const resolver = vi.fn((id: string) => id);
+      resolveBinary({
+        scope: 'foo',
+        binaryName: 'foo',
+        from: import.meta.url,
+        platform: 'linux',
+        arch: 'x64',
+        binaryDir: 'libexec/tools',
+        resolver,
+      });
+      expect(resolver).toHaveBeenCalledWith('@foo/linux-x64/libexec/tools/foo');
+    });
+
+    it('reports the platform package, not the subpath, when resolution fails', () => {
+      expect(() =>
+        resolveBinary({
+          scope: 'foo',
+          binaryName: 'foo',
+          from: import.meta.url,
+          platform: 'linux',
+          arch: 'x64',
+          binaryDir: '',
+          resolver: () => {
+            throw new Error('not found');
+          },
+        }),
+      ).toThrow(/expected optional dependency @foo\/linux-x64 to provide one/);
+    });
+  });
+
   describe('platformPackage template', () => {
     it('substitutes {scope}, {platform}, {arch}', () => {
       const resolver = vi.fn((id: string) => id);

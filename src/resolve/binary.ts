@@ -50,11 +50,13 @@ export function resolveBinary(opts: ResolveOpts): string {
     platform = process.platform,
     arch = process.arch,
     resolver = defaultResolver(from),
+    binaryDir = 'bin',
   } = opts;
   const ext = platform === 'win32' ? '.exe' : '';
   const platformPkg = buildPlatformPkg(opts, platform, arch);
+  const subpath = [...(binaryDir ? [binaryDir] : []), `${binaryName}${ext}`].join('/');
   try {
-    return resolver(`${platformPkg}/bin/${binaryName}${ext}`);
+    return resolver(`${platformPkg}/${subpath}`);
   } catch (cause) {
     throw new Error(
       `${binaryName}: no prebuilt binary for ${platform}-${arch}. ` +

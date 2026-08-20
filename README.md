@@ -112,6 +112,7 @@ main({
   platformPackage: '@{scope}/{platform}-{arch}', // optional; default shown
   packageName: ({ platform, arch }) => `@scope/${platform}-${arch}`, // optional escape hatch
   triples: { 'linux-x64': 'x86_64-unknown-linux-gnu' }, // required if template uses {triple}
+  binaryDir: 'bin',          // optional; default shown. '' = platform package root
 });
 ```
 
@@ -150,6 +151,25 @@ main({
 Use `packageName` for shapes that templating cannot express. It receives
 `{ platform, arch, scope, binaryName }` and returns the package name.
 `packageName` takes precedence over `platformPackage` when both are set.
+
+### Binary location inside the platform package
+
+Default: `bin/`. Set `binaryDir: ''` when the binary sits at the package
+root, which is what `putitoutthere`'s bundled-cli recipe stages:
+
+```
+@yourname/x86_64-unknown-linux-gnu/
+├── package.json
+└── foo
+```
+
+```ts
+main({ scope: 'yourname', binaryName: 'foo', from: import.meta.url, binaryDir: '' });
+```
+
+Any other directory works too (`binaryDir: 'libexec'`). The `.exe` suffix
+is applied by bin-shim on Windows either way — `binaryDir` names the
+directory, not the file.
 
 ### `resolveBinary(opts): string`
 
@@ -195,6 +215,7 @@ interface ResolveOpts {
   platformPackage?: string;
   packageName?: PackageNameFn;
   triples?: Triples;
+  binaryDir?: string;
 }
 
 interface MainOpts extends ResolveOpts {
