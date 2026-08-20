@@ -15,7 +15,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
-const LIB = new URL('../dist/index.js', import.meta.url).href;
+const LIB = new URL('../../dist/index.js', import.meta.url).href;
 
 interface RunResult {
   code: number | null;

@@ -1,11 +1,13 @@
-import * as _addon from '../resolve/addon.js';
 import { resolveRunCli } from '../resolve/addon.js';
 import { afterEach, describe, it, expect, vi } from 'vitest';
 import { mainInProcess } from './mainInProcess.js';
 import type { SignalRaiser } from '../types.js';
 
 vi.mock('../resolve/addon.js', async () => {
-  const actual = (await vi.importActual('../resolve/addon.js')) as typeof _addon;
+  const actual =
+    await vi.importActual<typeof import('../resolve/addon.js')>(
+      '../resolve/addon.js',
+    );
   return { ...actual, resolveRunCli: vi.fn() };
 });
 

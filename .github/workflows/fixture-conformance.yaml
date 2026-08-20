@@ -72,7 +72,7 @@ jobs:
 
       - name: JS fixture-tier conformance
         working-directory: packages/javascript
-        run: pnpm exec vitest run src/fixture.conformance.test.ts
+        run: pnpm exec vitest run tests/integration/fixture.conformance.test.ts
 
       # --- Python ---------------------------------------------------------
       - name: Install uv
@@ -84,7 +84,7 @@ jobs:
 
       - name: Python fixture-tier conformance
         working-directory: packages/python
-        run: uv run pytest tests/fixture_conformance_test.py -v
+        run: uv run pytest tests/integration/fixture_conformance_test.py -v
 
       # A skipped suite would otherwise pass silently and this whole job
       # would prove nothing — fail loudly if the fixture wasn't picked up.
@@ -96,7 +96,7 @@ jobs:
         working-directory: packages/python
         run: |
           set -euo pipefail
-          out=$(uv run pytest tests/fixture_conformance_test.py -q -rs 2>&1)
+          out=$(uv run pytest tests/integration/fixture_conformance_test.py -q -rs 2>&1)
           echo "$out"
           if grep -q 'native fixture not built' <<<"$out"; then
             echo "::error::fixture-tier suite skipped — the built fixture was not found"
@@ -144,7 +144,7 @@ jobs:
 
       - name: JS Windows ctrl-c conformance
         working-directory: packages/javascript
-        run: pnpm exec vitest run src/fixture.conformance.test.ts
+        run: pnpm exec vitest run tests/integration/fixture.conformance.test.ts
 
       - name: Install uv
         uses: astral-sh/setup-uv@v5
@@ -155,7 +155,7 @@ jobs:
 
       - name: Python Windows ctrl-c conformance
         working-directory: packages/python
-        run: uv run pytest tests/fixture_conformance_test.py -v
+        run: uv run pytest tests/integration/fixture_conformance_test.py -v
 
       # These rows are the entire point of this job; a skip here means the
       # harness did not run and the job proved nothing. Match the two
@@ -166,7 +166,7 @@ jobs:
         working-directory: packages/python
         run: |
           set -euo pipefail
-          out=$(uv run pytest tests/fixture_conformance_test.py -q -rs 2>&1)
+          out=$(uv run pytest tests/integration/fixture_conformance_test.py -q -rs 2>&1)
           echo "$out"
           if grep -qE 'native fixture not built|console-control harness not available' <<<"$out"; then
             echo "::error::Windows ctrl-c rows skipped — fixture or harness not found"

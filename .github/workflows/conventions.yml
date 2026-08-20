@@ -1,0 +1,42 @@
+name: Testing Conventions
+
+# Enforce the testing-conventions standard on this repo's packages: every
+# source file carries a colocated unit test (TypeScript `foo.ts` ->
+# `foo.test.ts`; Python `foo.py` -> `foo_test.py`), plus the suite-executing
+# gates (coverage floor, diff-scoped mutation, packaging, e2e-verify) where
+# applicable. Calls the upstream reusable workflow, which installs the
+# published `testing-conventions` binary and runs each rule as its own job.
+#   https://github.com/thekevinscott/testing-conventions
+#
+# Pinned to the upstream rolling `v0` tag (same convention as release.yml's
+# putitoutthere pin): v0 tracks the latest backwards-compatible release.
+#
+# Per-language `source` because this is a monorepo: the reusable workflow
+# scans a single root, so it is called once per package. `src` rather than
+# the package root keeps non-source files (`setup.py`, `tests/`) out of the
+# colocated-test scan.
+
+on:
+  pull_request:
+    paths:
+      - 'packages/**'
+      - 'pnpm-lock.yaml'
+      - 'pnpm-workspace.yaml'
+      - '.github/workflows/conventions.yml'
+
+permissions: { contents: read }
+
+jobs:
+  javascript:
+    name: JavaScript
+    uses: thekevinscott/testing-conventions/.github/workflows/testing-conventions.yml@v0
+    with:
+      languages: '["typescript"]'
+      source: packages/javascript/src
+
+  python:
+    name: Python
+    uses: thekevinscott/testing-conventions/.github/workflows/testing-conventions.yml@v0
+    with:
+      languages: '["python"]'
+      source: packages/python/src

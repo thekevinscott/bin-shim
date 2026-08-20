@@ -22,12 +22,12 @@ from pathlib import Path
 
 import pytest
 
-REPO_ROOT = Path(__file__).resolve().parents[3]
+REPO_ROOT = Path(__file__).resolve().parents[4]
 FIXTURE_DIR = REPO_ROOT / "fixtures" / "native" / "dist"
 FIXTURE_MODULE = FIXTURE_DIR / (
     "bin_shim_fixture.pyd" if sys.platform == "win32" else "bin_shim_fixture.so"
 )
-LAUNCHER = Path(__file__).parent / "fixtures" / "fixture_launcher.py"
+LAUNCHER = Path(__file__).parent.parent / "fixtures" / "fixture_launcher.py"
 
 pytestmark = pytest.mark.skipif(
     not FIXTURE_MODULE.exists(),

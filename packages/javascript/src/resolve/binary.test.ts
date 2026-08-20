@@ -1,10 +1,12 @@
-import * as _defaults from '../defaults/index.js';
 import { defaultResolver } from '../defaults/index.js';
 import { afterEach, describe, it, expect, vi } from 'vitest';
 import { resolveBinary } from './binary.js';
 
 vi.mock('../defaults/index.js', async () => {
-  const actual = (await vi.importActual('../defaults/index.js')) as typeof _defaults;
+  const actual =
+    await vi.importActual<typeof import('../defaults/index.js')>(
+      '../defaults/index.js',
+    );
   return {
     ...actual,
     defaultResolver: vi.fn(),
