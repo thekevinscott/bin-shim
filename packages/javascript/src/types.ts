@@ -49,6 +49,12 @@ export interface ResolveOpts extends PackageNamingOpts {
   platform?: NodeJS.Platform;
   arch?: NodeJS.Architecture;
   resolver?: Resolver;
+  /**
+   * Directory holding the binary inside the platform package. Defaults to
+   * `bin`; `''` puts it at the package root, which is where putitoutthere's
+   * bundled-cli recipe stages it.
+   */
+  binaryDir?: string;
 }
 
 export interface MainOpts extends ResolveOpts {

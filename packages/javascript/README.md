@@ -129,8 +129,29 @@ main({
   platformPackage: '@{scope}/{platform}-{arch}', // optional; default shown
   packageName: ({ platform, arch }) => `@scope/${platform}-${arch}`, // optional escape hatch
   triples: { 'linux-x64': 'x86_64-unknown-linux-gnu' }, // required if template uses {triple}
+  binaryDir: 'bin',          // optional; default shown. '' = package root
 });
 ```
+
+### Binary location inside the platform package
+
+By default the binary sits in `bin/`. Some publishers stage it at the
+package root instead — putitoutthere's `bundled-cli` recipe does — so
+`binaryDir` names the directory:
+
+```ts
+main({ scope: 'yourname', binaryName: 'foo', from: import.meta.url, binaryDir: '' });
+```
+
+```
+@yourname/linux-x64/
+├── package.json
+└── foo
+```
+
+Any relative path works (`libexec/tools`), and `.exe` is still appended on
+Windows. This is resolution only — it does not change what the platform
+package must declare.
 
 ### Platform package naming
 
@@ -320,6 +341,7 @@ interface ResolveOpts extends PackageNamingOpts {
   platform?: NodeJS.Platform;
   arch?: NodeJS.Architecture;
   resolver?: Resolver;
+  binaryDir?: string;
 }
 
 interface MainOpts extends ResolveOpts {
