@@ -1,14 +1,13 @@
-import * as _binary from '../resolve/binary.js';
 import { resolveBinary } from '../resolve/binary.js';
-import * as _defaults from '../defaults/index.js';
 import { defaultSpawner } from '../defaults/index.js';
 import { afterEach, describe, it, expect, vi } from 'vitest';
 import { main } from './main.js';
 
 vi.mock('../resolve/binary.js', async () => {
-  const actual = (await vi.importActual(
-    '../resolve/binary.js',
-  )) as typeof _binary;
+  const actual =
+    await vi.importActual<typeof import('../resolve/binary.js')>(
+      '../resolve/binary.js',
+    );
   return {
     ...actual,
     resolveBinary: vi.fn(),
@@ -16,7 +15,10 @@ vi.mock('../resolve/binary.js', async () => {
 });
 
 vi.mock('../defaults/index.js', async () => {
-  const actual = (await vi.importActual('../defaults/index.js')) as typeof _defaults;
+  const actual =
+    await vi.importActual<typeof import('../defaults/index.js')>(
+      '../defaults/index.js',
+    );
   return {
     ...actual,
     defaultSpawner: vi.fn(),

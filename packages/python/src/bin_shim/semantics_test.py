@@ -6,7 +6,6 @@ proven by the subprocess-based conformance suite in tests/.
 """
 
 import os
-import signal
 import sys
 from types import SimpleNamespace
 
@@ -39,7 +38,9 @@ def recorded(monkeypatch):
     """
     events = []
     monkeypatch.setattr(
-        signal, "signal", lambda signum, handler: events.append(("signal", signum, handler))
+        semantics_module.signal,
+        "signal",
+        lambda signum, handler: events.append(("signal", signum, handler)),
     )
     monkeypatch.setattr(os, "kill", lambda pid, signum: events.append(("kill", pid, signum)))
     fake_sys = SimpleNamespace(
@@ -64,10 +65,14 @@ def describe_apply_exit_semantics():
             # for real it dies inside kill. 128 + SIGINT = 130.
             assert excinfo.value.code == 130
             assert recorded == [
-                ("signal", signal.SIGINT, signal.SIG_DFL),
+                (
+                    "signal",
+                    semantics_module.signal.SIGINT,
+                    semantics_module.signal.SIG_DFL,
+                ),
                 "flush_stdout",
                 "flush_stderr",
-                ("kill", os.getpid(), signal.SIGINT),
+                ("kill", os.getpid(), semantics_module.signal.SIGINT),
             ]
 
         def test_reraises_sigterm_for_143(recorded):
@@ -75,10 +80,14 @@ def describe_apply_exit_semantics():
                 apply_exit_semantics(SIGTERM_EXIT_CODE, platform="linux")
             assert excinfo.value.code == 143
             assert recorded == [
-                ("signal", signal.SIGTERM, signal.SIG_DFL),
+                (
+                    "signal",
+                    semantics_module.signal.SIGTERM,
+                    semantics_module.signal.SIG_DFL,
+                ),
                 "flush_stdout",
                 "flush_stderr",
-                ("kill", os.getpid(), signal.SIGTERM),
+                ("kill", os.getpid(), semantics_module.signal.SIGTERM),
             ]
 
     def describe_on_windows():

@@ -10,8 +10,7 @@ from types import ModuleType
 
 import pytest
 
-from bin_shim.errors import BinShimError
-from bin_shim.main import main
+from bin_shim.main import BinShimError, main
 
 
 class _FlushRecorder:

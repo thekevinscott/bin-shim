@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-vi.mock('node:fs', async (importActual) => {
-  const actual = await importActual<typeof import('node:fs')>();
+vi.mock('node:fs', async () => {
+  const actual = await vi.importActual<typeof import('node:fs')>('node:fs');
   return { ...actual, statSync: vi.fn(), chmodSync: vi.fn() };
 });
 

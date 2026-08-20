@@ -5,8 +5,7 @@ from types import ModuleType
 
 import pytest
 
-from bin_shim.errors import BinShimError
-from bin_shim.resolve import resolve_run_cli
+from bin_shim.resolve import BinShimError, resolve_run_cli
 
 
 def _module_with(**attrs) -> ModuleType:
